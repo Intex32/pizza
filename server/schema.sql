@@ -56,14 +56,29 @@ CREATE TABLE IF NOT EXISTS orders (
   ready_at          INTEGER,
   picked_up_at      INTEGER,
   oven_layer_id     INTEGER REFERENCES oven_layers(id) ON DELETE SET NULL,
+  oven_slot         INTEGER,                   -- 0-based position WITHIN the deck. Order
+                                               --   matters: slot 1 is the one nearest the door.
 
   -- A BAKING row must always be able to render a timer; a NULL bake_seconds would render
   -- NaN:NaN, never blink, and burn the pizza silently.
   CHECK (status <> 'BAKING' OR (baking_started_at IS NOT NULL AND bake_seconds IS NOT NULL)),
   -- The oven slot frees itself when the pizza leaves the oven. This REQUIRES that status and
   -- placement always change in the SAME UPDATE. Every statement in orders.ts does.
-  CHECK (oven_layer_id IS NULL OR status = 'BAKING')
+  CHECK (oven_layer_id IS NULL OR status = 'BAKING'),
+  -- A slot number only means anything inside a deck, so the two are never half-set.
+  CHECK ((oven_layer_id IS NULL AND oven_slot IS NULL)
+      OR (oven_layer_id IS NOT NULL AND oven_slot IS NOT NULL AND oven_slot >= 0))
 ) STRICT;
+
+-- ONE pizza per slot, enforced by the database rather than by convention: two crew members
+-- dropping into the same slot at the same instant is otherwise a silent double-booking.
+-- The loser gets SQLITE_CONSTRAINT_UNIQUE, which orders.ts turns into a 409.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_slot
+  ON orders(oven_layer_id, oven_slot)
+  WHERE oven_layer_id IS NOT NULL
+    AND oven_slot IS NOT NULL
+    AND status = 'BAKING'
+    AND cancelled_at IS NULL;
 
 CREATE INDEX IF NOT EXISTS idx_orders_status  ON orders(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_orders_created ON orders(created_at);

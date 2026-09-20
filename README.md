@@ -50,14 +50,14 @@ tablet on its own URL — the URL is the memory, so it survives a reload, a slee
 | Guests | `/new` | Place an order. |
 | Counter | `/crew/orders` | Everyone who has ordered and not yet paid. Search by name, take cash, tap **PAID → PREP**. Also **+ Walk-in** for someone who never pre-ordered. |
 | Prep table | `/crew/prep` | Pizzas to build. Tap one when it is topped and ready for the oven. |
-| Oven queue | `/crew/queue` | Built and waiting. Tap to put in the oven. |
-| Oven | `/crew/oven` | Decks, drag-and-drop, timers, the alarm. |
+| Oven | `/crew/oven` | Everything the oven crew needs on one screen: what is waiting to go in, the decks and their slots, timers, the alarm. |
 | Pickup | `/crew/ready` | Big numbers and names. Tap when handed over. |
 | Anyone | `/crew/menu` | The pizza list: names, ingredients, bake times, sold-out. |
 | Anyone | `/crew/admin` | All orders, the shopping list, backups, deleting. |
 
-The bar across the top of every crew screen shows `ORD · PREP · QUEUE · OVEN · READY` so you can
-see how far behind you are without leaving your station.
+The bar across the top of every crew screen shows `ORD · PREP · OVEN · READY` — one chip per
+screen — so you can see how far behind you are without leaving your station. `OVEN` reads
+`baking / total slots`; how many are waiting to go in is on the oven screen itself.
 
 ---
 
@@ -73,34 +73,63 @@ it is a flag on the order, not a step, and it is always reversible from the admi
 **Undo.** Every forward tap raises a toast with an **Undo** button for ten seconds.
 
 **Taking a pizza back out of the oven** asks first, because that is the one move that destroys a
-timer it cannot get back. Moving a pizza between decks never touches its timer.
+timer it cannot get back. Moving a pizza between slots or decks never touches its timer.
 
-**Raw in the middle?** A pizza on the ready board has a small `↩ oven` button. Within two minutes
-it resumes the original timer (it assumes a mis-tap); after that it starts a fresh bake.
+**Raw in the middle?** A pizza on the ready board has a small `↩ oven` button. It comes back to
+the Unplaced tray — its old slot was freed when it came out, and something else may be in it by
+now — so give it a slot on the oven screen. Within two minutes it resumes the original timer
+(it assumes a mis-tap); after that it starts a fresh bake.
 
 ---
 
 ## The oven screen
 
-- **Layers/decks** are yours to define — one per oven shelf, or one per oven. Tap **Edit layout**
-  to add, rename, resize, reorder or delete them. The layout is stored on the server, so every
-  tablet sees the same thing.
-- **Two ways to place a pizza.** Drag it, or tap it and then tap a deck. The tap path exists
-  because drag-and-drop on a greasy tablet at 21:00 is not something to rely on.
-- **Capacity is advisory.** A deck set to 4 will happily take a 5th and turn amber. The pizza is
-  already in the oven; the app records reality rather than refereeing it.
-- **Unplaced** is always there. A pizza can bake without anyone recording where it is, and it
-  still blinks when its time is up.
-- **Deleting a deck asks where its pizzas go** — another deck, or Unplaced. Their timers keep
-  running. Nothing moves on its own, ever.
-- **Timers are server-anchored.** A tablet with a wrong clock still counts down correctly, and
-  restarting the server mid-bake changes nothing.
-- **When time is up** the card blinks and (if sound is on) it pings every 20 seconds. Tap it once
-  to send it to the ready board. Nothing ever advances by itself — whether an overdue pizza is
-  perfect or ruined is your call, not the app's.
-- **Sound** needs one tap to switch on, because tablets block audio until you interact. The
-  crew login does it for you; otherwise use the button on the oven screen. Note an iPad's
-  physical silent switch mutes it regardless.
+One screen for the whole oven job: the queue of pizzas waiting to go in sits at the top, the
+decks underneath. Whoever is loading the oven no longer has to switch screens to see what is
+next.
+
+**Decks and slots.** A deck is a named row with a set number of slots — one deck per oven
+shelf, or one per oven, whatever matches your kitchen. Each deck has its own slot count
+(1–12), because a deck nearest the fire may only take two while another takes six. Every slot
+is drawn whether it is full or not, numbered left to right, so "it's in Deck 1 slot 3" is
+something two people can actually say to each other.
+
+**Putting a pizza in.** Tap one in *To go in*, then tap the slot you are putting it in — or
+drag it there. Only the slots that would actually accept it light up. Drag is the nicety; tap
+is what survives an oven mitt and a wet finger.
+
+**Moving one that is already baking.** Drag it to another slot, or use the `⇄` button on its
+card and then tap the destination. Dropping it on an occupied slot **swaps the two pizzas**.
+Neither timer is touched by any move — a pizza that has been in for six minutes still says so.
+
+**A slot holds exactly one pizza.** That is enforced by the database, not just the screen, so
+two people tapping the same empty slot at the same instant cannot double-book it — the second
+one is told someone got there first. Putting a queued pizza onto a full slot is refused rather
+than silently bumping the occupant out: there would be nowhere to put them.
+
+**Unplaced** is always there. A pizza can bake without anyone recording where it went, and it
+still counts, still times, still blinks. Use it when you are too busy to be precise.
+
+**Changing the layout.** Tap **Edit decks** to add a deck, rename one, change its slot count,
+reorder them, or delete one. Moving pizzas is switched off while you edit so the two gestures
+cannot collide. The layout is stored on the server, so every tablet sees the same thing.
+
+- **Fewer slots than pizzas?** Shrinking a deck moves any pizza in a slot that no longer exists
+  to Unplaced, and tells you how many. Nothing vanishes.
+- **Deleting a deck asks where its pizzas go** — another deck, or Unplaced. They fill the
+  destination's free slots in order; any that do not fit land in Unplaced. The dialog says
+  which before you commit. Timers keep running throughout. Nothing moves on its own, ever.
+
+**Timers are server-anchored.** A tablet with a wrong clock still counts down correctly, and
+restarting the server mid-bake changes nothing.
+
+**When time is up** the card blinks and (if sound is on) it pings every 20 seconds. Tap it once
+to send it to the ready board. Nothing ever advances by itself — whether an overdue pizza is
+perfect or ruined is your call, not the app's.
+
+**Sound** needs one tap to switch on, because tablets block audio until you interact. The crew
+login does it for you; otherwise use the button on the oven screen. Note an iPad's physical
+silent switch mutes it regardless.
 
 ---
 

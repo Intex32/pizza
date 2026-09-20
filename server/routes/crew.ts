@@ -67,10 +67,17 @@ crewRouter.post('/orders/:id/transition', (req, res) => {
   res.json({ order });
 });
 
-/** The only path into BAKING. ovenLayerId null means the Unplaced tray. */
+/**
+ * The only path into BAKING. A deck is a numbered row of slots and order matters, so this
+ * takes a PAIR. ovenLayerId null means the Unplaced tray, where positions do not apply.
+ */
 crewRouter.post('/orders/:id/place', (req, res) => {
   const body = asObject(req.body);
-  const order = placeOrder(idParam(req), nullableInt(body, 'ovenLayerId', { min: 1 }));
+  const order = placeOrder(
+    idParam(req),
+    nullableInt(body, 'ovenLayerId', { min: 1 }),
+    nullableInt(body, 'ovenSlot', { min: 0, max: 11 }),
+  );
   res.json({ order });
 });
 
@@ -122,18 +129,21 @@ crewRouter.post('/layers', (req, res) => {
 
 crewRouter.patch('/layers/:id', (req, res) => {
   const body = asObject(req.body);
-  const layer = updateLayer(idParam(req), {
+  // `evicted` counts pizzas that were sitting in slots the deck no longer has, so the UI
+  // can say where they went instead of letting them appear to vanish.
+  const { layer, evicted } = updateLayer(idParam(req), {
     name: optStr(body, 'name', { min: 1, max: 40 }),
     capacity: optInt(body, 'capacity', { min: 1, max: 12 }),
     position: optInt(body, 'position', { min: 0, max: 999 }),
   });
-  res.json({ layer });
+  res.json({ layer, evicted });
 });
 
 /**
- * The rehoming heuristic lives here: the crew member deleting the layer names the
+ * The rehoming heuristic lives here: the crew member deleting the deck names the
  * destination, because they are the only person who knows where those pizzas physically
- * went. Timers keep running.
+ * went. They fill the destination's free slots in order; the rest go to Unplaced. Timers
+ * keep running throughout.
  */
 crewRouter.delete('/layers/:id', (req, res) => {
   const raw = String(req.query.moveTo ?? 'unplaced');

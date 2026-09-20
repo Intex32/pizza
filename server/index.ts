@@ -108,9 +108,17 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   }
   const code = err && typeof err === 'object' ? (err as { code?: string }).code : undefined;
   if (code === 'SQLITE_CONSTRAINT_FOREIGNKEY') {
-    // Someone deleted the oven layer mid-drag. The client animates the card back to Unplaced.
+    // Someone deleted the oven deck mid-drag. The client animates the card back to Unplaced.
     res.status(409).json({
-      error: { code: 'layer_gone', message: 'That oven layer no longer exists.' },
+      error: { code: 'layer_gone', message: 'That oven deck no longer exists.' },
+    });
+    return;
+  }
+  if (code === 'SQLITE_CONSTRAINT_UNIQUE' || code === 'SQLITE_CONSTRAINT_PRIMARYKEY') {
+    // Two crew members dropped into the same slot in the same instant. The unique index is
+    // what stopped the double-booking; this is how the loser finds out.
+    res.status(409).json({
+      error: { code: 'slot_taken', message: 'Someone just put a pizza in that slot.' },
     });
     return;
   }

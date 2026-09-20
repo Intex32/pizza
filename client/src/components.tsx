@@ -178,15 +178,12 @@ export function CountsStrip() {
   const counts = countByStatus(orders);
   const ovenCapacity = (state?.layers ?? []).reduce((sum, l) => sum + l.capacity, 0);
 
-  const items: { to: string; label: string; value: string; busy?: boolean }[] = [
+  // One chip per screen. There is deliberately no QUEUE chip: the queue is part of the oven
+  // screen now, and a second chip pointing at the same place was just clutter. How many are
+  // waiting is on that screen, in the "To go in" tray and the line above the decks.
+  const items: { to: string; label: string; value: string }[] = [
     { to: '/crew/orders', label: 'ORD', value: String(counts[STATUS.ORDERED]) },
     { to: '/crew/prep', label: 'PREP', value: String(counts[STATUS.IN_PREPARATION]) },
-    {
-      to: '/crew/queue',
-      label: 'QUEUE',
-      value: String(counts[STATUS.WAITING_FOR_OVEN]),
-      busy: counts[STATUS.WAITING_FOR_OVEN] > 10,
-    },
     {
       to: '/crew/oven',
       label: 'OVEN',
@@ -201,9 +198,7 @@ export function CountsStrip() {
         <NavLink
           key={it.to}
           to={it.to}
-          className={({ isActive }) =>
-            `count${isActive ? ' active' : ''}${it.busy ? ' busy' : ''}`
-          }
+          className={({ isActive }) => `count${isActive ? ' active' : ''}`}
         >
           {it.label} <b>{it.value}</b>
         </NavLink>

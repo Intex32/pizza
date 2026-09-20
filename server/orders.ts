@@ -4,12 +4,14 @@ import {
   bumpVersion,
   db,
   getCustomerOrderByToken,
+  getLayer,
   getOrderById,
   getPizzaType,
   log,
   readSettings,
   rowToCustomerOrder,
   rowToLayer,
+  rowToOrder,
   rowToPizzaType,
   tx,
   writeSetting,
@@ -219,6 +221,7 @@ export function transitionOrder(id: number, expected: Status, next: Status): Ord
           bake_seconds      = CASE WHEN :expected = 'BAKING' AND :next = 'WAITING_FOR_OVEN'
                                    THEN NULL ELSE bake_seconds END,
           oven_layer_id     = NULL,
+          oven_slot         = NULL,
           ready_at     = CASE WHEN :next = 'READY' THEN COALESCE(ready_at, :now) ELSE ready_at END,
           picked_up_at = CASE WHEN :next = 'PICKED_UP' THEN :now
                               WHEN :expected = 'PICKED_UP' THEN NULL
@@ -244,16 +247,37 @@ export function transitionOrder(id: number, expected: Status, next: Status): Ord
 }
 
 /**
- * The ONLY way into BAKING - first insertion, moving between layers, and dragging to the
+ * The ONLY way into BAKING - first insertion, moving between slots, and dragging to the
  * Unplaced tray all come through here. One path into the oven means exactly one place where
  * baking_started_at can ever be written, which is what guarantees that moving a pizza
- * between decks never resets a six-minute-old timer.
+ * between slots never resets a six-minute-old timer.
+ *
+ * A deck is a numbered row of slots, and slot order matters (slot 1 is nearest the door),
+ * so placement is a PAIR: which deck, and which position in it.
  */
-export function placeOrder(id: number, ovenLayerId: number | null): Order {
+export function placeOrder(
+  id: number,
+  ovenLayerId: number | null,
+  ovenSlot: number | null,
+): Order {
   return mutate(() => {
     const before = requireOrder(id);
     if (before.cancelledAt !== null) {
       throw staleConflict('order_cancelled', 'That order was cancelled.', before);
+    }
+
+    let layerId = ovenLayerId;
+    let slot = ovenSlot;
+    if (layerId === null) {
+      slot = null; // the Unplaced tray has no positions
+    } else {
+      const layer = getLayer(layerId);
+      if (!layer) {
+        throw new ApiError(409, 'layer_gone', 'That oven layer no longer exists.');
+      }
+      if (slot === null || slot < 0 || slot >= layer.capacity) {
+        throw bad('invalid_slot', `${layer.name} has slots 1-${layer.capacity}.`);
+      }
     }
 
     // Resolved BEFORE binding: binding undefined to a named parameter throws on this Node,
@@ -264,11 +288,43 @@ export function placeOrder(id: number, ovenLayerId: number | null): Order {
       DEFAULT_BAKE_SECONDS;
 
     const now = Date.now();
+
+    const occupantRow =
+      layerId === null
+        ? undefined
+        : (db
+            .prepare(
+              "SELECT * FROM orders WHERE oven_layer_id = :l AND oven_slot = :s " +
+                "AND status = 'BAKING' AND cancelled_at IS NULL",
+            )
+            .get({ l: layerId, s: slot }) as Row | undefined);
+    const occupant = occupantRow ? rowToOrder(occupantRow) : undefined;
+    const swapping = Boolean(occupant && occupant.id !== id);
+
+    if (occupant && swapping) {
+      // A swap only makes sense when the mover has a slot of its own to hand back. Coming
+      // off the queue there is nowhere to put the occupant, so say so rather than quietly
+      // bumping someone else's pizza out of the oven.
+      if (before.ovenLayerId === null || before.ovenSlot === null) {
+        throw staleConflict(
+          'slot_taken',
+          `Slot ${(slot ?? 0) + 1} already has #${occupant.id} ${occupant.customerName} in it.`,
+          before,
+        );
+      }
+      // Vacate first: the unique index rejects two pizzas sharing a slot even for the
+      // instant in the middle of a swap.
+      db.prepare(
+        'UPDATE orders SET oven_layer_id = NULL, oven_slot = NULL, updated_at = :now WHERE id = :oid',
+      ).run({ oid: occupant.id, now });
+    }
+
     const result = db
       .prepare(`
         UPDATE orders SET
           status        = 'BAKING',
           oven_layer_id = :layerId,
+          oven_slot     = :slot,
           baking_started_at = CASE
               WHEN status = 'BAKING' THEN COALESCE(baking_started_at, :now)
               WHEN status = 'READY' AND :now - COALESCE(ready_at, 0) <= 120000
@@ -281,18 +337,27 @@ export function placeOrder(id: number, ovenLayerId: number | null): Order {
           AND cancelled_at IS NULL
           AND status IN ('WAITING_FOR_OVEN', 'BAKING', 'READY')
       `)
-      .run({ id, layerId: ovenLayerId, now, fallback });
+      .run({ id, layerId, slot, now, fallback });
 
-    const order = requireOrder(id);
     if (Number(result.changes) === 0) {
+      // Throwing rolls the whole transaction back, so the vacated occupant returns with it.
       throw staleConflict(
         'not_placeable',
         'That pizza is no longer in the oven queue.',
-        order,
+        requireOrder(id),
       );
     }
-    log(`PLACE #${id} ${before.status} -> BAKING layer=${ovenLayerId ?? 'unplaced'}`);
-    return order;
+
+    if (occupant && swapping) {
+      db.prepare(
+        'UPDATE orders SET oven_layer_id = :l, oven_slot = :s, updated_at = :now WHERE id = :oid',
+      ).run({ l: before.ovenLayerId, s: before.ovenSlot, now, oid: occupant.id });
+      log(`SWAP #${id} <-> #${occupant.id}`);
+    }
+
+    const where = layerId === null ? 'unplaced' : `layer=${layerId} slot=${(slot ?? 0) + 1}`;
+    log(`PLACE #${id} ${before.status} -> BAKING ${where}`);
+    return requireOrder(id);
   });
 }
 
@@ -372,9 +437,11 @@ export function setUnpaid(id: number): Order {
 export function cancelOrder(id: number, reason: string): Order {
   return mutate(() => {
     const now = Date.now();
+    // Freeing the slot is the point: a cancelled pizza is off the board, and leaving it
+    // holding a slot would block a real pizza from going where it physically is.
     db.prepare(
       'UPDATE orders SET cancelled_at = COALESCE(cancelled_at, :now), cancel_reason = :reason, ' +
-        'updated_at = :now WHERE id = :id',
+        'oven_layer_id = NULL, oven_slot = NULL, updated_at = :now WHERE id = :id',
     ).run({ id, reason, now });
     log(`CANCEL #${id} "${reason}"`);
     return requireOrder(id);
@@ -458,60 +525,117 @@ export function createLayer(name: string, capacity: number): OvenLayer {
 export function updateLayer(
   id: number,
   input: { name?: string; capacity?: number; position?: number },
-): OvenLayer {
+): { layer: OvenLayer; evicted: number } {
   return mutate(() => {
     const row = db.prepare('SELECT * FROM oven_layers WHERE id = :id').get({ id }) as Row | undefined;
     if (!row) throw notFound('layer_not_found', 'That oven layer no longer exists.');
     const before = rowToLayer(row);
     const now = Date.now();
+    const capacity = input.capacity ?? before.capacity;
+
     db.prepare(
       'UPDATE oven_layers SET name = :name, capacity = :capacity, position = :position, ' +
         'updated_at = :now WHERE id = :id',
     ).run({
       id,
       name: input.name ?? before.name,
-      // Reducing capacity below current occupancy is allowed: the cap is advisory, and the
-      // layer simply renders over-capacity. The app records reality, it does not referee it.
-      capacity: input.capacity ?? before.capacity,
+      capacity,
       position: input.position ?? before.position,
       now,
     });
+
+    // Shrinking a deck can leave pizzas sitting in slots that no longer exist. They go to
+    // the Unplaced tray rather than silently vanishing or keeping an impossible position -
+    // the crew can see them and put them somewhere real.
+    const evicted = Number(
+      db
+        .prepare(
+          "UPDATE orders SET oven_layer_id = NULL, oven_slot = NULL, updated_at = :now " +
+            "WHERE oven_layer_id = :id AND oven_slot >= :capacity AND status = 'BAKING'",
+        )
+        .run({ id, capacity, now }).changes,
+    );
+    if (evicted > 0) log(`LAYER ${id} shrunk to ${capacity}, ${evicted} pizza(s) -> unplaced`);
+
     const after = db.prepare('SELECT * FROM oven_layers WHERE id = :id').get({ id }) as Row;
-    return rowToLayer(after);
+    return { layer: rowToLayer(after), evicted };
   });
 }
 
 /**
  * The rehoming heuristic, in one sentence: a pizza only ever moves because someone moved it,
- * and when you delete a layer you choose where its pizzas go.
+ * and when you delete a deck you choose where its pizzas go.
  *
- * The explicit UPDATE runs BEFORE the DELETE so the guarantee never depends on
- * `PRAGMA foreign_keys` being on. Timers are untouched - the pizza is still physically baking.
+ * Pizzas are freed from the deck BEFORE it is dropped, so the guarantee never depends on
+ * `PRAGMA foreign_keys` being on. They fill the destination's free slots in order; any that
+ * do not fit land in the Unplaced tray. Timers are untouched throughout - the pizzas are
+ * still physically baking.
  */
-export function deleteLayer(id: number, moveTo: number | null): { moved: number; to: number | null } {
+export function deleteLayer(
+  id: number,
+  moveTo: number | null,
+): { moved: number; toUnplaced: number; to: number | null } {
   return mutate(() => {
     const row = db.prepare('SELECT * FROM oven_layers WHERE id = :id').get({ id }) as Row | undefined;
     if (!row) throw notFound('layer_not_found', 'That oven layer no longer exists.');
 
     if (moveTo !== null) {
-      if (moveTo === id) throw bad('invalid_destination', 'A layer cannot move pizzas into itself.');
-      const dest = db.prepare('SELECT id FROM oven_layers WHERE id = :id').get({ id: moveTo });
-      if (!dest) throw bad('invalid_destination', 'That destination layer does not exist.');
+      if (moveTo === id) throw bad('invalid_destination', 'A deck cannot move pizzas into itself.');
+      if (!getLayer(moveTo)) throw bad('invalid_destination', 'That destination deck does not exist.');
     }
 
     const now = Date.now();
-    const moved = Number(
-      db
-        .prepare(
-          "UPDATE orders SET oven_layer_id = :dest, updated_at = :now " +
-            "WHERE oven_layer_id = :id AND status = 'BAKING'",
-        )
-        .run({ dest: moveTo, id, now }).changes,
-    );
+    const occupants = db
+      .prepare(
+        "SELECT id FROM orders WHERE oven_layer_id = :id AND status = 'BAKING' " +
+          'AND cancelled_at IS NULL ORDER BY oven_slot',
+      )
+      .all({ id }) as { id: number }[];
+
+    // Clear every reference first - including any cancelled leftovers - so neither the
+    // unique index nor the foreign key has anything to trip over.
+    db.prepare(
+      'UPDATE orders SET oven_layer_id = NULL, oven_slot = NULL, updated_at = :now ' +
+        'WHERE oven_layer_id = :id',
+    ).run({ id, now });
+
+    let moved = 0;
+    let toUnplaced = 0;
+
+    if (moveTo === null) {
+      toUnplaced = occupants.length;
+    } else {
+      const dest = getLayer(moveTo);
+      const taken = new Set(
+        (
+          db
+            .prepare(
+              "SELECT oven_slot AS s FROM orders WHERE oven_layer_id = :d " +
+                "AND status = 'BAKING' AND cancelled_at IS NULL",
+            )
+            .all({ d: moveTo }) as { s: number }[]
+        ).map((r) => Number(r.s)),
+      );
+      const free: number[] = [];
+      for (let i = 0; i < (dest?.capacity ?? 0); i += 1) if (!taken.has(i)) free.push(i);
+
+      const assign = db.prepare(
+        'UPDATE orders SET oven_layer_id = :d, oven_slot = :s, updated_at = :now WHERE id = :oid',
+      );
+      for (const o of occupants) {
+        const slot = free.shift();
+        if (slot === undefined) {
+          toUnplaced += 1;
+          continue;
+        }
+        assign.run({ d: moveTo, s: slot, now, oid: o.id });
+        moved += 1;
+      }
+    }
 
     db.prepare('DELETE FROM oven_layers WHERE id = :id').run({ id });
-    log(`LAYER -${id} moved ${moved} pizza(s) to ${moveTo ?? 'unplaced'}`);
-    return { moved, to: moveTo };
+    log(`LAYER -${id} moved ${moved} pizza(s) to ${moveTo ?? 'unplaced'}, ${toUnplaced} unplaced`);
+    return { moved, toUnplaced, to: moveTo };
   });
 }
 

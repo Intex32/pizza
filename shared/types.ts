@@ -21,6 +21,8 @@ export type Order = {
   readyAt: number | null;
   pickedUpAt: number | null;
   ovenLayerId: number | null;
+  /** 0-based position within the deck. null when the pizza has no recorded position. */
+  ovenSlot: number | null;
 };
 
 /** What a customer gets back: their own order, including the token that addresses it. */

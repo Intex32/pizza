@@ -31,8 +31,6 @@ if (!fk || Number(fk.foreign_keys) !== 1) {
   process.exit(1);
 }
 
-db.exec(fs.readFileSync(path.join(ROOT, 'server', 'schema.sql'), 'utf8'));
-
 // --- Schema drift check ----------------------------------------------------------------
 // CREATE TABLE IF NOT EXISTS silently no-ops against an older table that is missing a
 // column added later. Without this, the failure surfaces as a 500 on the customer order
@@ -47,32 +45,48 @@ const EXPECTED_COLUMNS: Record<string, string[]> = {
     'id', 'public_token', 'client_request_id', 'customer_name', 'note', 'pizza_type_id',
     'pizza_type_name', 'status', 'cancelled_at', 'cancel_reason', 'remade_from', 'paid_at',
     'created_at', 'updated_at', 'queued_at', 'baking_started_at', 'bake_seconds', 'ready_at',
-    'picked_up_at', 'oven_layer_id',
+    'picked_up_at', 'oven_layer_id', 'oven_slot',
   ],
   sessions: ['id', 'created_at', 'last_seen_at'],
   settings: ['key', 'value'],
 };
 
-for (const [table, expected] of Object.entries(EXPECTED_COLUMNS)) {
-  const info = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
-  const actual = info.map((r) => r.name);
-  const missing = expected.filter((c) => !actual.includes(c));
-  const extra = actual.filter((c) => !expected.includes(c));
-  if (missing.length || extra.length) {
-    console.error('');
-    console.error(`FATAL: table "${table}" does not match the expected schema.`);
-    if (missing.length) console.error(`  missing columns:    ${missing.join(', ')}`);
-    if (extra.length) console.error(`  unexpected columns: ${extra.join(', ')}`);
-    console.error('');
-    console.error('This database was created by an older version of the schema.');
-    console.error('There is no migration framework, by design. To move forward:');
-    console.error('  1. npm run backup');
-    console.error(`  2. delete ${DB_PATH} (and the -wal / -shm files beside it)`);
-    console.error('  3. restart, then: npm run seed');
-    console.error('');
-    process.exit(1);
+/**
+ * `skipMissingTables` is what makes this runnable BEFORE the schema is applied, which it
+ * must be: schema.sql now creates an index over oven_slot, so against an older database
+ * `db.exec` throws "no such column" and the operator gets a stack trace instead of the
+ * plain-English instructions below. Checking first means the useful message always wins.
+ */
+function checkSchemaDrift(skipMissingTables: boolean): void {
+  for (const [table, expected] of Object.entries(EXPECTED_COLUMNS)) {
+    const info = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+    if (info.length === 0 && skipMissingTables) continue; // schema.sql is about to create it
+    const actual = info.map((r) => r.name);
+    const missing = expected.filter((c) => !actual.includes(c));
+    const extra = actual.filter((c) => !expected.includes(c));
+    if (missing.length || extra.length) {
+      console.error('');
+      console.error(`FATAL: table "${table}" does not match the expected schema.`);
+      if (missing.length) console.error(`  missing columns:    ${missing.join(', ')}`);
+      if (extra.length) console.error(`  unexpected columns: ${extra.join(', ')}`);
+      console.error('');
+      console.error('This database was created by an older version of the schema.');
+      console.error('There is no migration framework, by design. To move forward:');
+      console.error('  1. npm run backup');
+      console.error(`  2. delete ${DB_PATH} (and the -wal / -shm files beside it)`);
+      console.error('  3. restart, then: npm run seed');
+      console.error('');
+      process.exit(1);
+    }
   }
 }
+
+// Before: catches an out-of-date database and explains it.
+checkSchemaDrift(true);
+db.exec(fs.readFileSync(path.join(ROOT, 'server', 'schema.sql'), 'utf8'));
+// After: catches schema.sql and EXPECTED_COLUMNS disagreeing with each other, which is a
+// developer mistake rather than an operator one - but it fails the same loud way.
+checkSchemaDrift(false);
 
 // --- Settings defaults -----------------------------------------------------------------
 db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('orders_open', '1')").run();
@@ -164,6 +178,7 @@ export function rowToOrder(row: Row): Order {
     readyAt: nOrNull(row.ready_at),
     pickedUpAt: nOrNull(row.picked_up_at),
     ovenLayerId: nOrNull(row.oven_layer_id),
+    ovenSlot: nOrNull(row.oven_slot),
   };
 }
 
@@ -213,6 +228,11 @@ export function getCustomerOrderByToken(token: string): CustomerOrder | undefine
 export function allLayers(): OvenLayer[] {
   const rows = db.prepare('SELECT * FROM oven_layers ORDER BY position, id').all() as Row[];
   return rows.map(rowToLayer);
+}
+
+export function getLayer(id: number): OvenLayer | undefined {
+  const row = db.prepare('SELECT * FROM oven_layers WHERE id = :id').get({ id }) as Row | undefined;
+  return row ? rowToLayer(row) : undefined;
 }
 
 export function allPizzaTypes(): PizzaType[] {

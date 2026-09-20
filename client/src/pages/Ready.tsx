@@ -43,12 +43,19 @@ export default function Ready() {
     });
   };
 
-  /** Raw in the middle. The most common backward move at a real pizza night. */
+  /**
+   * Raw in the middle. The most common backward move at a real pizza night.
+   *
+   * It goes back to the Unplaced tray rather than its old slot: leaving the oven freed that
+   * slot, and something else may well be in it by now. The oven crew give it a real slot on
+   * the oven screen. Within two minutes the server resumes the original countdown, so an
+   * accidental tap costs nothing.
+   */
   const backToOven = (o: Order) => {
     void mutateOrder({
       id: o.id,
-      patch: { status: STATUS.BAKING },
-      request: () => crewApi.place(o.id, o.ovenLayerId).then((r) => r.order),
+      patch: { status: STATUS.BAKING, ovenLayerId: null, ovenSlot: null },
+      request: () => crewApi.place(o.id, null, null).then((r) => r.order),
       alreadyDone: (x) => x.status === STATUS.BAKING,
     });
   };

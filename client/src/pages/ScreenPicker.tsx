@@ -19,8 +19,13 @@ export default function ScreenPicker() {
   const tiles = [
     { to: '/crew/orders', emoji: '🧾', label: 'Ordered', count: counts.ORDERED, sub: 'take cash, start it' },
     { to: '/crew/prep', emoji: '🧑‍🍳', label: 'Preparation', count: counts.IN_PREPARATION, sub: 'top the pizzas' },
-    { to: '/crew/queue', emoji: '⏳', label: 'Waiting for oven', count: counts.WAITING_FOR_OVEN, sub: 'ready to go in' },
-    { to: '/crew/oven', emoji: '🔥', label: 'On fire', count: counts.BAKING, sub: 'timers and decks' },
+    {
+      to: '/crew/oven',
+      emoji: '🔥',
+      label: 'Oven',
+      count: counts.WAITING_FOR_OVEN + counts.BAKING,
+      sub: `${counts.WAITING_FOR_OVEN} waiting · ${counts.BAKING} baking`,
+    },
     { to: '/crew/ready', emoji: '✅', label: 'Ready', count: counts.READY, sub: 'hand them over' },
     { to: '/crew/menu', emoji: '📋', label: 'Menu', count: null, sub: 'pizza types' },
     { to: '/crew/admin', emoji: '⚙️', label: 'Admin', count: null, sub: 'orders and shopping' },

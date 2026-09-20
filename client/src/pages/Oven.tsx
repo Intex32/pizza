@@ -22,23 +22,37 @@ const VERY_LATE_MS = 60_000;
 /** Below this the crew almost certainly meant to tap it, so no confirmation. */
 const NO_CONFIRM_REMAINING_MS = 20_000;
 
-type DropZone = { kind: 'layer'; id: number } | { kind: 'unplaced' };
+/** Where a pizza can be dropped. A deck is a numbered row, so a target is deck + position. */
+type Zone = { kind: 'slot'; layerId: number; slot: number } | { kind: 'unplaced' };
 
-function zoneId(z: DropZone): string {
-  return z.kind === 'unplaced' ? 'zone-unplaced' : `zone-layer-${z.id}`;
+const UNPLACED: Zone = { kind: 'unplaced' };
+
+function zoneId(z: Zone): string {
+  return z.kind === 'unplaced' ? 'zone-unplaced' : `zone-slot-${z.layerId}-${z.slot}`;
 }
 
-function parseZone(id: string): DropZone | null {
-  if (id === 'zone-unplaced') return { kind: 'unplaced' };
-  const m = /^zone-layer-(\d+)$/.exec(id);
-  return m ? { kind: 'layer', id: Number(m[1]) } : null;
+function parseZone(id: string): Zone | null {
+  if (id === 'zone-unplaced') return UNPLACED;
+  const m = /^zone-slot-(\d+)-(\d+)$/.exec(id);
+  return m ? { kind: 'slot', layerId: Number(m[1]), slot: Number(m[2]) } : null;
+}
+
+const sameZone = (a: Zone, b: Zone): boolean =>
+  a.kind === 'unplaced'
+    ? b.kind === 'unplaced'
+    : b.kind === 'slot' && a.layerId === b.layerId && a.slot === b.slot;
+
+function zoneOf(order: Order): Zone {
+  return order.ovenLayerId !== null && order.ovenSlot !== null
+    ? { kind: 'slot', layerId: order.ovenLayerId, slot: order.ovenSlot }
+    : UNPLACED;
 }
 
 export default function Oven() {
   useWakeLock();
   const now = useNow(500);
   const stale = useBoardStale();
-  const { orders, state, mutateOrder, run } = useLive();
+  const { orders, state, mutateOrder, run, pushToast } = useLive();
 
   const [selected, setSelected] = useState<number | null>(null);
   const [dragging, setDragging] = useState<Order | null>(null);
@@ -53,6 +67,9 @@ export default function Oven() {
     () => orders.filter((o) => o.cancelledAt === null && o.status === STATUS.BAKING),
     [orders],
   );
+
+  /** The old QUEUE screen, folded in: the person loading the oven is the person who needs
+   *  to see what is waiting for it. Oldest first. */
   const waiting = useMemo(
     () =>
       orders
@@ -61,19 +78,25 @@ export default function Oven() {
     [orders],
   );
 
-  // First in, first out - the only ordering the app can honestly claim to know.
-  const sortBake = (list: Order[]) =>
-    [...list].sort((a, b) => (a.bakingStartedAt ?? 0) - (b.bakingStartedAt ?? 0));
+  /** Baking, but nobody recorded where. Always visible so such a pizza cannot be lost. */
+  const unplaced = useMemo(
+    () =>
+      baking
+        .filter((o) => o.ovenLayerId === null || o.ovenSlot === null)
+        .sort((a, b) => (a.bakingStartedAt ?? 0) - (b.bakingStartedAt ?? 0)),
+    [baking],
+  );
 
-  const unplaced = sortBake(baking.filter((o) => o.ovenLayerId === null));
-  const byLayer = new Map<number, Order[]>();
-  for (const l of layers) byLayer.set(l.id, []);
-  for (const o of baking) {
-    if (o.ovenLayerId === null) continue;
-    const bucket = byLayer.get(o.ovenLayerId);
-    if (bucket) bucket.push(o);
-    else unplaced.push(o); // layer vanished under us; never lose the pizza
-  }
+  /** layerId -> slotIndex -> order. The single lookup every deck renders from. */
+  const bySlot = useMemo(() => {
+    const map = new Map<number, Map<number, Order>>();
+    for (const l of layers) map.set(l.id, new Map());
+    for (const o of baking) {
+      if (o.ovenLayerId === null || o.ovenSlot === null) continue;
+      map.get(o.ovenLayerId)?.set(o.ovenSlot, o);
+    }
+    return map;
+  }, [baking, layers]);
 
   const overdueCount = baking.filter(
     (o) => bakeState(o.bakingStartedAt, o.bakeSeconds, now).expired,
@@ -90,35 +113,58 @@ export default function Oven() {
     }),
   );
 
-  const place = (order: Order, zone: DropZone) => {
-    const layerId = zone.kind === 'unplaced' ? null : zone.id;
+  const selectedOrder = selected === null ? null : orders.find((o) => o.id === selected) ?? null;
+  /** A pizza already in a deck has a slot to hand back, so it may swap into an occupied one. */
+  const selectedCanSwap =
+    selectedOrder !== null &&
+    selectedOrder.ovenLayerId !== null &&
+    selectedOrder.ovenSlot !== null;
+
+  const place = (order: Order, zone: Zone) => {
     setSelected(null);
+    if (sameZone(zoneOf(order), zone) && order.status === STATUS.BAKING) return;
+
+    const layerId = zone.kind === 'unplaced' ? null : zone.layerId;
+    const slot = zone.kind === 'unplaced' ? null : zone.slot;
+
     void mutateOrder({
       id: order.id,
       patch: {
         status: STATUS.BAKING,
         ovenLayerId: layerId,
-        // Only guess a start time for a pizza that is not already baking; moving decks must
+        ovenSlot: slot,
+        // Only guess a start time for a pizza that is not already baking; moving slots must
         // never look like a reset, even for the half second before the server replies.
         bakingStartedAt: order.status === STATUS.BAKING ? order.bakingStartedAt : serverNow(),
       },
-      request: () => crewApi.place(order.id, layerId).then((r) => r.order),
-      alreadyDone: (x) => x.status === STATUS.BAKING && x.ovenLayerId === layerId,
+      request: () => crewApi.place(order.id, layerId, slot).then((r) => r.order),
+      alreadyDone: (x) =>
+        x.status === STATUS.BAKING && x.ovenLayerId === layerId && x.ovenSlot === slot,
     });
   };
 
   const markReady = (order: Order) => {
     setConfirmReady(null);
+    const from = zoneOf(order);
     void mutateOrder({
       id: order.id,
-      patch: { status: STATUS.READY, ovenLayerId: null, readyAt: serverNow() },
+      patch: { status: STATUS.READY, ovenLayerId: null, ovenSlot: null, readyAt: serverNow() },
       request: () =>
         crewApi.transition(order.id, STATUS.BAKING, STATUS.READY).then((r) => r.order),
       alreadyDone: (x) => x.status === STATUS.READY,
       undo: {
         text: `#${order.id} ${order.customerName} is ready`,
         label: 'Undo',
-        run: () => crewApi.place(order.id, order.ovenLayerId).then((r) => r.order),
+        // Puts it back in the slot it came out of, and within two minutes the server
+        // resumes the original countdown rather than starting a fresh bake.
+        run: () =>
+          crewApi
+            .place(
+              order.id,
+              from.kind === 'unplaced' ? null : from.layerId,
+              from.kind === 'unplaced' ? null : from.slot,
+            )
+            .then((r) => r.order),
       },
     });
   };
@@ -130,18 +176,18 @@ export default function Oven() {
       patch: {
         status: STATUS.WAITING_FOR_OVEN,
         ovenLayerId: null,
+        ovenSlot: null,
         bakingStartedAt: null,
         bakeSeconds: null,
       },
       request: () =>
-        crewApi
-          .transition(order.id, STATUS.BAKING, STATUS.WAITING_FOR_OVEN)
-          .then((r) => r.order),
+        crewApi.transition(order.id, STATUS.BAKING, STATUS.WAITING_FOR_OVEN).then((r) => r.order),
       alreadyDone: (x) => x.status === STATUS.WAITING_FOR_OVEN,
     });
   };
 
   const onCardTap = (o: Order) => {
+    if (editing) return;
     if (o.status === STATUS.WAITING_FOR_OVEN) {
       setSelected((s) => (s === o.id ? null : o.id));
       return;
@@ -150,6 +196,21 @@ export default function Oven() {
     // Expired is the hot path: one tap, no dialog, because that is the tap that saves a pizza.
     if (t.expired || !t.valid || t.remainingMs <= NO_CONFIRM_REMAINING_MS) markReady(o);
     else setConfirmReady(o);
+  };
+
+  /** Tapping a slot is the reliable half of the interaction; dragging is the enhancement. */
+  const onZoneTap = (zone: Zone, occupant: Order | undefined) => {
+    if (!selectedOrder || editing) return;
+    if (occupant && occupant.id !== selectedOrder.id) {
+      if (!selectedCanSwap) {
+        pushToast(
+          `Slot ${zone.kind === 'slot' ? zone.slot + 1 : ''} has #${occupant.id} ${occupant.customerName} in it. Pick an empty slot.`,
+          'warn',
+        );
+        return;
+      }
+    }
+    place(selectedOrder, zone);
   };
 
   const adjustBake = (o: Order, deltaS: number) => {
@@ -171,15 +232,14 @@ export default function Oven() {
   };
 
   const onDragEnd = (e: DragEndEvent) => {
+    const order = dragging;
     setDragging(null);
-    if (!e.over) return;
+    if (!e.over || !order) return;
     const zone = parseZone(String(e.over.id));
-    const id = Number(String(e.active.id).replace('order-', ''));
-    const order = orders.find((o) => o.id === id);
-    if (zone && order) place(order, zone);
+    if (zone) place(order, zone);
   };
 
-  const selectedOrder = selected === null ? null : orders.find((o) => o.id === selected) ?? null;
+  const totalSlots = layers.reduce((n, l) => n + l.capacity, 0);
 
   return (
     <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
@@ -193,11 +253,15 @@ export default function Oven() {
               setSelected(null);
             }}
           >
-            {editing ? '✓ Done editing' : '✎ Edit layout'}
+            {editing ? '✓ Done editing' : '✎ Edit decks'}
           </button>
           {editing ? (
-            <span className="small muted">Dragging pizzas is off while you edit the layout.</span>
-          ) : null}
+            <span className="small muted">Moving pizzas is off while you edit the decks.</span>
+          ) : (
+            <span className="small muted">
+              {baking.length} baking in {totalSlots} slots · {waiting.length} waiting
+            </span>
+          )}
           <span className="spacer" />
           {!audioReady() && !muted ? (
             <button
@@ -231,84 +295,91 @@ export default function Oven() {
         </div>
 
         <div className="oven-trays">
-          <Tray
-            title={`Waiting for oven (${waiting.length})`}
-            zone={null}
-            empty="Nothing queued"
-          >
-            {waiting.map((o) => (
-              <OvenCard
-                key={o.id}
-                order={o}
-                now={now}
-                selected={selected === o.id}
-                draggable={!editing}
-                onTap={() => onCardTap(o)}
-                footer={<span>waiting {elapsed(o.queuedAt ?? o.createdAt, now)}</span>}
-              />
-            ))}
-          </Tray>
+          {/* The merged queue. Tap one, then tap the slot you are putting it in. */}
+          <div className="tray">
+            <div className="tray-head">
+              <span className="tray-title">To go in ({waiting.length})</span>
+              {waiting.length > 0 && !selectedOrder ? (
+                <span className="small muted">tap one, then tap a slot</span>
+              ) : null}
+            </div>
+            <div className="slot-row">
+              {waiting.length === 0 ? (
+                <span className="small muted">Nothing waiting for the oven</span>
+              ) : (
+                waiting.map((o) => (
+                  <OvenCard
+                    key={o.id}
+                    order={o}
+                    now={now}
+                    selected={selected === o.id}
+                    draggable={!editing}
+                    onTap={() => onCardTap(o)}
+                    footer={<span>waiting {elapsed(o.queuedAt ?? o.createdAt, now)}</span>}
+                  />
+                ))
+              )}
+            </div>
+          </div>
 
-          <Tray
-            title={`Unplaced (${unplaced.length})`}
-            zone={{ kind: 'unplaced' }}
-            empty="Baking pizzas with no recorded deck land here"
-            placeHere={selectedOrder ? () => place(selectedOrder, { kind: 'unplaced' }) : null}
-          >
-            {unplaced.map((o) => (
-              <OvenCard
-                key={o.id}
-                order={o}
-                now={now}
-                selected={selected === o.id}
-                draggable={!editing}
-                onTap={() => onCardTap(o)}
-                onMove={() => setSelected((s) => (s === o.id ? null : o.id))}
-                onAdjust={(d) => adjustBake(o, d)}
-                onTakeOut={() => setConfirmOut(o)}
-              />
-            ))}
-          </Tray>
+          <UnplacedTray
+            orders={unplaced}
+            now={now}
+            selected={selected}
+            editing={editing}
+            canDrop={Boolean(selectedOrder)}
+            onTap={onCardTap}
+            onMove={(o) => setSelected((s) => (s === o.id ? null : o.id))}
+            onAdjust={adjustBake}
+            onTakeOut={(o) => setConfirmOut(o)}
+            onZoneTap={() => onZoneTap(UNPLACED, undefined)}
+          />
         </div>
 
         <div className="oven-decks">
           {layers.length === 0 ? (
             <div className="deck">
               <EmptyState emoji="🔥">
-                <p>No oven layers yet.</p>
+                <p>No oven decks yet.</p>
                 <p className="small">
-                  Tap <strong>Edit layout</strong> to add a deck. Pizzas can bake in the Unplaced
-                  tray in the meantime.
+                  Tap <strong>Edit decks</strong> to add one. Pizzas can bake in the Unplaced tray
+                  in the meantime.
                 </p>
               </EmptyState>
             </div>
           ) : (
-            layers.map((layer) => (
+            layers.map((layer, i) => (
               <Deck
                 key={layer.id}
                 layer={layer}
-                orders={sortBake(byLayer.get(layer.id) ?? [])}
+                slots={bySlot.get(layer.id) ?? new Map()}
                 now={now}
                 editing={editing}
                 selected={selected}
-                onPlaceHere={selectedOrder ? () => place(selectedOrder, { kind: 'layer', id: layer.id }) : null}
-                onTap={onCardTap}
+                selectedOrder={selectedOrder}
+                selectedCanSwap={selectedCanSwap}
+                onCardTap={onCardTap}
+                onZoneTap={onZoneTap}
                 onMove={(o) => setSelected((s) => (s === o.id ? null : o.id))}
                 onAdjust={adjustBake}
                 onTakeOut={(o) => setConfirmOut(o)}
                 onRename={(name) => void run(() => crewApi.updateLayer(layer.id, { name }))}
-                onCapacity={(capacity) => void run(() => crewApi.updateLayer(layer.id, { capacity }))}
-                onMoveUp={
-                  layers.indexOf(layer) === 0
-                    ? null
-                    : () => void run(() => reorder(layers, layer, -1))
+                onCapacity={(capacity) =>
+                  void run(async () => {
+                    const r = await crewApi.updateLayer(layer.id, { capacity });
+                    if (r.evicted > 0) {
+                      pushToast(
+                        `${r.evicted} pizza${r.evicted === 1 ? '' : 's'} moved to Unplaced — that slot is gone`,
+                        'warn',
+                      );
+                    }
+                    return r;
+                  })
                 }
+                onMoveUp={i === 0 ? null : () => void run(() => reorder(layers, i, i - 1))}
                 onMoveDown={
-                  layers.indexOf(layer) === layers.length - 1
-                    ? null
-                    : () => void run(() => reorder(layers, layer, +1))
+                  i === layers.length - 1 ? null : () => void run(() => reorder(layers, i, i + 1))
                 }
-                occupants={(byLayer.get(layer.id) ?? []).length}
               />
             ))
           )}
@@ -319,11 +390,11 @@ export default function Oven() {
               className="btn btn-primary"
               style={{ flex: 'none' }}
               onClick={() => {
-                const name = window.prompt('Name for the new layer', `Deck ${layers.length + 1}`);
+                const name = window.prompt('Name for the new deck', `Deck ${layers.length + 1}`);
                 if (name?.trim()) void run(() => crewApi.createLayer(name.trim(), 4));
               }}
             >
-              + Add layer
+              + Add deck
             </button>
           ) : null}
         </div>
@@ -335,7 +406,7 @@ export default function Oven() {
                 <strong>
                   #{selectedOrder.id} {selectedOrder.customerName}
                 </strong>{' '}
-                selected — tap a deck to place it.
+                selected — tap {selectedCanSwap ? 'a slot (tap a full one to swap)' : 'an empty slot'}.
               </span>
               <button type="button" className="btn btn-sm" onClick={() => setSelected(null)}>
                 Cancel
@@ -347,7 +418,7 @@ export default function Oven() {
 
       <DragOverlay dropAnimation={null}>
         {dragging ? (
-          <div className="pcard drag-overlay" style={{ width: 190 }}>
+          <div className="pcard drag-overlay" style={{ width: 185 }}>
             <span className="pcard-no">#{dragging.id}</span>
             <span className="pcard-name">{dragging.customerName}</span>
             <span className="pcard-type">{dragging.pizzaTypeName}</span>
@@ -364,11 +435,7 @@ export default function Oven() {
               <button type="button" className="btn" onClick={() => setConfirmReady(null)}>
                 Leave it in
               </button>
-              <button
-                type="button"
-                className="btn btn-ok"
-                onClick={() => markReady(confirmReady)}
-              >
+              <button type="button" className="btn btn-ok" onClick={() => markReady(confirmReady)}>
                 Yes, it’s ready
               </button>
             </>
@@ -376,7 +443,9 @@ export default function Oven() {
         >
           <p>
             #{confirmReady.id} {confirmReady.customerName} still has{' '}
-            <strong>{bakeState(confirmReady.bakingStartedAt, confirmReady.bakeSeconds, now).label}</strong>{' '}
+            <strong>
+              {bakeState(confirmReady.bakingStartedAt, confirmReady.bakeSeconds, now).label}
+            </strong>{' '}
             left.
           </p>
         </Modal>
@@ -398,7 +467,8 @@ export default function Oven() {
           }
         >
           <p>
-            #{confirmOut.id} {confirmOut.customerName} goes back to the oven queue and its{' '}
+            #{confirmOut.id} {confirmOut.customerName} goes back to “to go in”, its slot frees up
+            and its{' '}
             <strong>{bakeState(confirmOut.bakingStartedAt, confirmOut.bakeSeconds, now).label}</strong>{' '}
             timer is cleared. It restarts from zero when you put it back in.
           </p>
@@ -408,47 +478,68 @@ export default function Oven() {
   );
 }
 
-function reorder(layers: OvenLayer[], layer: OvenLayer, delta: number) {
-  const i = layers.indexOf(layer);
-  const j = i + delta;
-  const other = layers[j];
+function reorder(layers: OvenLayer[], i: number, j: number) {
   return Promise.all([
-    crewApi.updateLayer(layer.id, { position: other.position }),
-    crewApi.updateLayer(other.id, { position: layer.position }),
+    crewApi.updateLayer(layers[i].id, { position: layers[j].position }),
+    crewApi.updateLayer(layers[j].id, { position: layers[i].position }),
   ]);
 }
 
-// --- Trays and decks ---------------------------------------------------------------------------
+// --- Unplaced tray -------------------------------------------------------------------------
 
-function Tray({
-  title,
-  zone,
-  empty,
-  children,
-  placeHere,
+function UnplacedTray({
+  orders,
+  now,
+  selected,
+  editing,
+  canDrop,
+  onTap,
+  onMove,
+  onAdjust,
+  onTakeOut,
+  onZoneTap,
 }: {
-  title: string;
-  zone: DropZone | null;
-  empty: string;
-  children: React.ReactNode;
-  placeHere?: (() => void) | null;
+  orders: Order[];
+  now: number;
+  selected: number | null;
+  editing: boolean;
+  canDrop: boolean;
+  onTap: (o: Order) => void;
+  onMove: (o: Order) => void;
+  onAdjust: (o: Order, delta: number) => void;
+  onTakeOut: (o: Order) => void;
+  onZoneTap: () => void;
 }) {
-  const droppable = useDroppable({ id: zone ? zoneId(zone) : 'zone-none', disabled: !zone });
-  const count = Array.isArray(children) ? children.length : children ? 1 : 0;
-
+  const droppable = useDroppable({ id: zoneId(UNPLACED) });
   return (
     <div
-      ref={zone ? droppable.setNodeRef : undefined}
-      className={`tray${zone && droppable.isOver ? ' drop-target' : ''}`}
+      ref={droppable.setNodeRef}
+      className={`tray${droppable.isOver ? ' drop-target' : ''}`}
     >
       <div className="tray-head">
-        <span className="tray-title">{title}</span>
+        <span className="tray-title">Unplaced ({orders.length})</span>
       </div>
       <div className="slot-row">
-        {count === 0 ? <span className="small muted">{empty}</span> : children}
-        {placeHere ? (
-          <button type="button" className="place-here" onClick={placeHere}>
-            ▸ PLACE HERE
+        {orders.length === 0 ? (
+          <span className="small muted">Baking pizzas with no recorded slot land here</span>
+        ) : (
+          orders.map((o) => (
+            <OvenCard
+              key={o.id}
+              order={o}
+              now={now}
+              selected={selected === o.id}
+              draggable={!editing}
+              onTap={() => onTap(o)}
+              onMove={() => onMove(o)}
+              onAdjust={(d) => onAdjust(o, d)}
+              onTakeOut={() => onTakeOut(o)}
+            />
+          ))
+        )}
+        {canDrop ? (
+          <button type="button" className="place-here" onClick={onZoneTap}>
+            ▸ PUT HERE
           </button>
         ) : null}
       </div>
@@ -456,15 +547,18 @@ function Tray({
   );
 }
 
+// --- Deck ----------------------------------------------------------------------------------
+
 function Deck({
   layer,
-  orders,
+  slots,
   now,
   editing,
   selected,
-  occupants,
-  onPlaceHere,
-  onTap,
+  selectedOrder,
+  selectedCanSwap,
+  onCardTap,
+  onZoneTap,
   onMove,
   onAdjust,
   onTakeOut,
@@ -474,13 +568,14 @@ function Deck({
   onMoveDown,
 }: {
   layer: OvenLayer;
-  orders: Order[];
+  slots: Map<number, Order>;
   now: number;
   editing: boolean;
   selected: number | null;
-  occupants: number;
-  onPlaceHere: (() => void) | null;
-  onTap: (o: Order) => void;
+  selectedOrder: Order | null;
+  selectedCanSwap: boolean;
+  onCardTap: (o: Order) => void;
+  onZoneTap: (zone: Zone, occupant: Order | undefined) => void;
   onMove: (o: Order) => void;
   onAdjust: (o: Order, delta: number) => void;
   onTakeOut: (o: Order) => void;
@@ -490,20 +585,17 @@ function Deck({
   onMoveDown: (() => void) | null;
 }) {
   const { run } = useLive();
-  const droppable = useDroppable({ id: zoneId({ kind: 'layer', id: layer.id }) });
   const [deleting, setDeleting] = useState(false);
-  const over = occupants > layer.capacity;
+  const used = slots.size;
+  const indexes = Array.from({ length: layer.capacity }, (_, i) => i);
 
   return (
-    <div
-      ref={droppable.setNodeRef}
-      className={`deck${droppable.isOver ? ' drop-target' : ''}`}
-    >
+    <div className="deck">
       <div className="deck-head">
         {editing ? (
           <input
             className="input"
-            style={{ maxWidth: 220, minHeight: 42 }}
+            style={{ maxWidth: 200, minHeight: 42 }}
             defaultValue={layer.name}
             onBlur={(e) => {
               const v = e.target.value.trim();
@@ -513,12 +605,15 @@ function Deck({
         ) : (
           <span className="deck-title">{layer.name}</span>
         )}
-        <span className={`cap${over ? ' over' : ''}`}>
-          {occupants} / {layer.capacity}
+        <span className={`cap${used === layer.capacity ? ' full' : ''}`}>
+          {used} / {layer.capacity}
         </span>
         <span className="spacer" />
         {editing ? (
           <div className="chipbar">
+            <span className="small muted" style={{ alignSelf: 'center', marginRight: 4 }}>
+              slots
+            </span>
             <button
               type="button"
               className="chipbtn"
@@ -559,33 +654,30 @@ function Deck({
       </div>
 
       <div className="slot-row">
-        {orders.length === 0 && !onPlaceHere ? (
-          <span className="small muted">Empty</span>
-        ) : null}
-        {orders.map((o) => (
-          <OvenCard
-            key={o.id}
-            order={o}
+        {indexes.map((i) => (
+          <Slot
+            key={i}
+            zone={{ kind: 'slot', layerId: layer.id, slot: i }}
+            index={i}
+            occupant={slots.get(i)}
             now={now}
-            selected={selected === o.id}
-            draggable={!editing}
-            onTap={() => onTap(o)}
-            onMove={() => onMove(o)}
-            onAdjust={(d) => onAdjust(o, d)}
-            onTakeOut={() => onTakeOut(o)}
+            editing={editing}
+            selected={selected}
+            selectedOrder={selectedOrder}
+            selectedCanSwap={selectedCanSwap}
+            onCardTap={onCardTap}
+            onZoneTap={onZoneTap}
+            onMove={onMove}
+            onAdjust={onAdjust}
+            onTakeOut={onTakeOut}
           />
         ))}
-        {onPlaceHere ? (
-          <button type="button" className="place-here" onClick={onPlaceHere}>
-            ▸ PLACE HERE
-          </button>
-        ) : null}
       </div>
 
       {deleting ? (
-        <DeleteLayerModal
+        <DeleteDeckModal
           layer={layer}
-          occupants={occupants}
+          occupants={used}
           onClose={() => setDeleting(false)}
           onDelete={async (moveTo) => {
             setDeleting(false);
@@ -597,12 +689,91 @@ function Deck({
   );
 }
 
+// --- One slot --------------------------------------------------------------------------------
+
+function Slot({
+  zone,
+  index,
+  occupant,
+  now,
+  editing,
+  selected,
+  selectedOrder,
+  selectedCanSwap,
+  onCardTap,
+  onZoneTap,
+  onMove,
+  onAdjust,
+  onTakeOut,
+}: {
+  zone: Zone;
+  index: number;
+  occupant: Order | undefined;
+  now: number;
+  editing: boolean;
+  selected: number | null;
+  selectedOrder: Order | null;
+  selectedCanSwap: boolean;
+  onCardTap: (o: Order) => void;
+  onZoneTap: (zone: Zone, occupant: Order | undefined) => void;
+  onMove: (o: Order) => void;
+  onAdjust: (o: Order, delta: number) => void;
+  onTakeOut: (o: Order) => void;
+}) {
+  const droppable = useDroppable({ id: zoneId(zone), disabled: editing });
+
+  const isSelf = occupant && selectedOrder && occupant.id === selectedOrder.id;
+  // An empty slot always accepts. A full one only accepts a pizza that has a slot of its
+  // own to give back, because there is nowhere else to put the occupant.
+  const offering = Boolean(selectedOrder) && !isSelf && (!occupant || selectedCanSwap);
+  const blocked = Boolean(selectedOrder) && !isSelf && Boolean(occupant) && !selectedCanSwap;
+
+  const cls = [
+    'slot',
+    occupant ? 'slot-full' : 'slot-empty',
+    droppable.isOver && !editing ? 'drop-target' : '',
+    offering ? 'slot-offering' : '',
+    blocked ? 'slot-blocked' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  return (
+    <div ref={droppable.setNodeRef} className={cls}>
+      <span className="slot-no">{index + 1}</span>
+      {occupant ? (
+        <OvenCard
+          order={occupant}
+          now={now}
+          selected={selected === occupant.id}
+          draggable={!editing}
+          onTap={() => (offering ? onZoneTap(zone, occupant) : onCardTap(occupant))}
+          onMove={() => onMove(occupant)}
+          onAdjust={(d) => onAdjust(occupant, d)}
+          onTakeOut={() => onTakeOut(occupant)}
+        />
+      ) : (
+        <button
+          type="button"
+          className="slot-body"
+          disabled={!offering}
+          onClick={() => onZoneTap(zone, undefined)}
+        >
+          {offering ? <span className="slot-cta">▸ PUT HERE</span> : null}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// --- Delete a deck ----------------------------------------------------------------------------
+
 /**
- * The rehoming heuristic IS this dialog. The person deleting the layer is the only one who
+ * The rehoming heuristic IS this dialog. The person deleting the deck is the only one who
  * knows where those pizzas physically went, and they are standing at the oven - so they
  * choose, rather than the app inventing a plausible lie. Timers keep running either way.
  */
-function DeleteLayerModal({
+function DeleteDeckModal({
   layer,
   occupants,
   onClose,
@@ -613,9 +784,18 @@ function DeleteLayerModal({
   onClose: () => void;
   onDelete: (moveTo: number | 'unplaced') => void;
 }) {
-  const { state } = useLive();
+  const { state, orders } = useLive();
   const others = (state?.layers ?? []).filter((l) => l.id !== layer.id);
   const [dest, setDest] = useState<string>('unplaced');
+
+  const freeInDest =
+    dest === 'unplaced'
+      ? Infinity
+      : (others.find((l) => l.id === Number(dest))?.capacity ?? 0) -
+        orders.filter(
+          (o) => o.ovenLayerId === Number(dest) && o.status === STATUS.BAKING && o.cancelledAt === null,
+        ).length;
+  const overflow = Math.max(0, occupants - freeInDest);
 
   return (
     <Modal
@@ -631,7 +811,7 @@ function DeleteLayerModal({
             className="btn btn-danger"
             onClick={() => onDelete(dest === 'unplaced' ? 'unplaced' : Number(dest))}
           >
-            Delete layer
+            Delete deck
           </button>
         </>
       }
@@ -650,7 +830,13 @@ function DeleteLayerModal({
               </option>
             ))}
           </select>
-          <p className="hint">Their timers keep running. Nothing is deleted except the layer.</p>
+          <p className="hint">
+            {dest === 'unplaced'
+              ? 'Their timers keep running. Nothing is deleted except the deck.'
+              : overflow > 0
+                ? `They fill the free slots in order — ${overflow} will not fit and go to Unplaced. Timers keep running.`
+                : 'They fill the free slots in order. Timers keep running.'}
+          </p>
         </>
       ) : (
         <p>It is empty, so nothing moves.</p>
@@ -761,7 +947,7 @@ function OvenCard({
               +0:30
             </button>
             {onMove ? (
-              <button type="button" className="chipbtn" title="Move to another deck" onClick={onMove}>
+              <button type="button" className="chipbtn" title="Move to another slot" onClick={onMove}>
                 ⇄
               </button>
             ) : null}

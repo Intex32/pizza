@@ -156,8 +156,10 @@ export const crewApi = {
     api.post<{ order: Order }>('/api/crew/orders', body),
   transition: (id: number, expected: string, next: string) =>
     api.post<{ order: Order }>(`/api/crew/orders/${id}/transition`, { expected, next }),
-  place: (id: number, ovenLayerId: number | null) =>
-    api.post<{ order: Order }>(`/api/crew/orders/${id}/place`, { ovenLayerId }),
+  /** A deck is a numbered row of slots and order matters, so placement is a PAIR.
+   *  Both null means the Unplaced tray. */
+  place: (id: number, ovenLayerId: number | null, ovenSlot: number | null) =>
+    api.post<{ order: Order }>(`/api/crew/orders/${id}/place`, { ovenLayerId, ovenSlot }),
   setBake: (id: number, bakeSeconds: number) =>
     api.patch<{ order: Order }>(`/api/crew/orders/${id}/bake`, { bakeSeconds }),
   edit: (id: number, body: { customerName?: string; pizzaTypeId?: number; note?: string }) =>
@@ -170,10 +172,13 @@ export const crewApi = {
 
   createLayer: (name: string, capacity: number) =>
     api.post<{ layer: OvenLayer }>('/api/crew/layers', { name, capacity }),
+  /** `evicted` counts pizzas that were sitting in slots a shrunk deck no longer has. */
   updateLayer: (id: number, body: { name?: string; capacity?: number; position?: number }) =>
-    api.patch<{ layer: OvenLayer }>(`/api/crew/layers/${id}`, body),
+    api.patch<{ layer: OvenLayer; evicted: number }>(`/api/crew/layers/${id}`, body),
   deleteLayer: (id: number, moveTo: number | 'unplaced') =>
-    api.del<{ moved: number; to: number | null }>(`/api/crew/layers/${id}?moveTo=${moveTo}`),
+    api.del<{ moved: number; toUnplaced: number; to: number | null }>(
+      `/api/crew/layers/${id}?moveTo=${moveTo}`,
+    ),
 
   createType: (body: { name: string; ingredients: string[]; bakeSeconds: number }) =>
     api.post<{ pizzaType: PizzaType }>('/api/crew/pizza-types', body),

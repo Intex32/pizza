@@ -87,6 +87,7 @@ type Fake = {
   /** seconds of bake already elapsed - negative values are not allowed */
   bakedForS?: number;
   layerIndex?: number | null;
+  slot?: number;
   cancelled?: string;
 };
 
@@ -98,10 +99,12 @@ const FAKES: Fake[] = [
   { name: 'Chris Okafor', typeIndex: 4, status: STATUS.WAITING_FOR_OVEN, paid: true },
   { name: 'Dana Ivanova', typeIndex: 0, status: STATUS.WAITING_FOR_OVEN, paid: true },
   // one about to expire, one already overdue - these are what the oven screen is for
-  { name: 'Eli Tanaka', typeIndex: 1, status: STATUS.BAKING, paid: true, bakedForS: 270, layerIndex: 0 },
-  { name: 'Fran Mbeki', typeIndex: 3, status: STATUS.BAKING, paid: true, bakedForS: 420, layerIndex: 0 },
+  { name: 'Eli Tanaka', typeIndex: 1, status: STATUS.BAKING, paid: true, bakedForS: 270, layerIndex: 0, slot: 0 },
+  { name: 'Fran Mbeki', typeIndex: 3, status: STATUS.BAKING, paid: true, bakedForS: 420, layerIndex: 0, slot: 2 },
   // one baking with no recorded position, to exercise the Unplaced tray
   { name: 'Gio Rossi', typeIndex: 2, status: STATUS.BAKING, paid: true, bakedForS: 60, layerIndex: null },
+  // a second deck in use, so the seeded board exercises more than one row of slots
+  { name: 'Kai Lindholm', typeIndex: 0, status: STATUS.BAKING, paid: true, bakedForS: 150, layerIndex: 1, slot: 1 },
   { name: 'Hana Novak', typeIndex: 0, status: STATUS.READY, paid: true },
   { name: 'Ivo Petrov', typeIndex: 4, status: STATUS.PICKED_UP, paid: true },
   { name: 'Jo Müller', typeIndex: 1, status: STATUS.ORDERED, cancelled: 'no-show' },
@@ -112,11 +115,11 @@ tx(() => {
     INSERT INTO orders (
       public_token, client_request_id, customer_name, note, pizza_type_id, pizza_type_name,
       status, cancelled_at, cancel_reason, paid_at, created_at, updated_at, queued_at,
-      baking_started_at, bake_seconds, ready_at, picked_up_at, oven_layer_id
+      baking_started_at, bake_seconds, ready_at, picked_up_at, oven_layer_id, oven_slot
     ) VALUES (
       :token, :requestId, :name, :note, :typeId, :typeName,
       :status, :cancelledAt, :cancelReason, :paidAt, :createdAt, :updatedAt, :queuedAt,
-      :bakingStartedAt, :bakeSeconds, :readyAt, :pickedUpAt, :ovenLayerId
+      :bakingStartedAt, :bakeSeconds, :readyAt, :pickedUpAt, :ovenLayerId, :ovenSlot
     )
   `);
 
@@ -148,6 +151,7 @@ tx(() => {
       readyAt: f.status === STATUS.READY || f.status === STATUS.PICKED_UP ? now - 300_000 : null,
       pickedUpAt: f.status === STATUS.PICKED_UP ? now - 60_000 : null,
       ovenLayerId: layerId,
+      ovenSlot: layerId === null ? null : (f.slot ?? 0),
     });
   });
 });

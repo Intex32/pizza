@@ -1,4 +1,4 @@
-import { Route, Routes } from 'react-router';
+import { Navigate, Route, Routes } from 'react-router';
 import CustomerHome from './pages/CustomerHome.tsx';
 import NewOrder from './pages/NewOrder.tsx';
 import OrderDetail from './pages/OrderDetail.tsx';
@@ -7,7 +7,6 @@ import CrewShell from './pages/CrewShell.tsx';
 import ScreenPicker from './pages/ScreenPicker.tsx';
 import Ordered from './pages/Ordered.tsx';
 import Prep from './pages/Prep.tsx';
-import Queue from './pages/Queue.tsx';
 import Oven from './pages/Oven.tsx';
 import Ready from './pages/Ready.tsx';
 import Menu from './pages/Menu.tsx';
@@ -28,7 +27,10 @@ export default function App() {
         <Route index element={<ScreenPicker />} />
         <Route path="orders" element={<Ordered />} />
         <Route path="prep" element={<Prep />} />
-        <Route path="queue" element={<Queue />} />
+        {/* The oven queue lives ON the oven screen now: the person loading the oven is the
+            person who needs to see what is waiting. A tablet bookmarked on the old URL
+            keeps working rather than 404ing mid-service. */}
+        <Route path="queue" element={<Navigate to="/crew/oven" replace />} />
         <Route path="oven" element={<Oven />} />
         <Route path="ready" element={<Ready />} />
         <Route path="menu" element={<Menu />} />
