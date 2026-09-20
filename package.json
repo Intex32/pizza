@@ -1,0 +1,40 @@
+{
+  "name": "pizza-night",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c yellow,cyan npm:dev:server npm:dev:client",
+    "dev:server": "node --watch server/index.ts",
+    "dev:client": "vite",
+    "typecheck": "tsc -p tsconfig.json",
+    "prebuild": "npm run typecheck",
+    "build": "vite build",
+    "preserve": "npm run build",
+    "serve": "node server/index.ts",
+    "start": "node server/index.ts",
+    "seed": "node server/seed.ts",
+    "backup": "node server/backup.ts",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "concurrently": "^10.0.5",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-router": "^8.4.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.0"
+  }
+}

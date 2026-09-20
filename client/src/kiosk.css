@@ -1,0 +1,763 @@
+/* ============================================================================
+   Crew screens. Dark, high contrast, glanceable from across a hot kitchen.
+   Scoped to .kiosk so the customer pages are untouched.
+   ============================================================================ */
+
+.kiosk {
+  --bg: #121016;
+  --surface: #1c1922;
+  --surface-2: #262231;
+  --border: #383144;
+  --text: #f6f2ee;
+  --muted: #a89db5;
+  --accent: #fb923c;
+  --accent-ink: #1a1008;
+
+  --ok: #34d399;
+  --ok-ink: #04291d;
+  --warn: #fbbf24;
+  --warn-ink: #2b1d00;
+  --danger: #f87171;
+  --danger-ink: #2c0b0b;
+  --info: #818cf8;
+
+  color-scheme: dark;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100dvh;
+}
+
+body:has(.kiosk) {
+  background: #121016;
+}
+
+.kiosk .card {
+  background: var(--surface);
+  border-color: var(--border);
+  box-shadow: none;
+}
+.kiosk .btn {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text);
+}
+.kiosk .btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.kiosk .btn-ok {
+  background: var(--ok);
+  border-color: var(--ok);
+  color: var(--ok-ink);
+}
+.kiosk .btn-danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--danger-ink);
+}
+.kiosk .input,
+.kiosk .textarea,
+.kiosk .select {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text);
+}
+.kiosk .modal {
+  background: var(--surface);
+  color: var(--text);
+}
+.kiosk .choice {
+  background: var(--surface-2);
+  border-color: var(--border);
+}
+.kiosk .choice:has(input:checked) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface-2));
+}
+.kiosk .note {
+  background: color-mix(in srgb, var(--warn) 18%, var(--surface));
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+  color: var(--text);
+}
+
+/* --- Shell -------------------------------------------------------------- */
+.crew-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  overflow: hidden; /* kiosk screens never scroll the page itself */
+}
+.crew-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  min-height: 52px;
+  background: #0d0b11;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.crew-bar::-webkit-scrollbar {
+  display: none;
+}
+.crew-body {
+  flex: 1;
+  min-height: 0; /* lets the oven grid own its own height instead of overflowing */
+  overflow: auto;
+  padding: 14px;
+}
+.crew-body.no-scroll {
+  overflow: hidden;
+  padding: 12px;
+}
+
+.screen-title {
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 0.82rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* --- Connection bar ------------------------------------------------------
+   The most important UI in the app. A green dot is painted by the same JS that
+   might be dead; a TICKING number is self-verifying. */
+.conn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.84rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  white-space: nowrap;
+  flex: none;
+}
+.conn-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--ok);
+  flex: none;
+}
+.conn-live {
+  color: var(--ok);
+}
+.conn-stale {
+  color: var(--warn);
+}
+.conn-stale .conn-dot {
+  background: var(--warn);
+}
+.conn-dead {
+  color: var(--danger);
+}
+.conn-dead .conn-dot {
+  background: var(--danger);
+}
+
+.offline-banner {
+  background: var(--danger);
+  color: var(--danger-ink);
+  font-weight: 750;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+}
+/* Past a minute the board is not just late, it is untrustworthy. Make that unmistakable
+   from the other side of the room. */
+.board-stale {
+  filter: grayscale(1);
+  opacity: 0.55;
+}
+
+/* --- Counts strip --------------------------------------------------------
+   Answers the one question no per-status screen can: how far behind are we? */
+.counts {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex: none;
+}
+.count {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.count b {
+  color: var(--text);
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+}
+.count.active {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.count.active b {
+  color: var(--accent-ink);
+}
+.count.busy {
+  background: color-mix(in srgb, var(--warn) 24%, var(--surface-2));
+  color: var(--warn);
+}
+.count.busy b {
+  color: var(--warn);
+}
+
+/* --- Screen picker ------------------------------------------------------- */
+.picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 14px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+.picker a {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 130px;
+  justify-content: center;
+  align-items: center;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 750;
+  font-size: 1.05rem;
+  padding: 16px;
+  text-align: center;
+}
+.picker a:active {
+  background: var(--surface-2);
+}
+.picker .picker-emoji {
+  font-size: 2rem;
+}
+.picker .picker-count {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.88rem;
+}
+
+/* --- Pizza cards --------------------------------------------------------- */
+.board {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 12px;
+  align-content: start;
+}
+.board.wide {
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+
+.pcard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 128px;
+  padding: 14px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  cursor: pointer;
+  width: 100%;
+}
+.pcard:active {
+  background: var(--surface-2);
+}
+.pcard:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+.pcard-no {
+  font-size: 1.6rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--muted);
+}
+.pcard-name {
+  font-size: 1.35rem;
+  font-weight: 750;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+.pcard-type {
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+.pcard-meta {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+/* A pending card is locked, so a second tap is physically impossible. */
+.pcard.pending {
+  opacity: 0.6;
+  pointer-events: none;
+}
+.pcard.failed {
+  opacity: 1;
+  pointer-events: auto;
+  border-color: var(--warn);
+  border-width: 2px;
+}
+.badge-unsaved {
+  position: absolute;
+  top: -9px;
+  right: 10px;
+  background: var(--warn);
+  color: var(--warn-ink);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 3px 8px;
+  border-radius: 999px;
+  text-transform: uppercase;
+}
+
+/* --- Timers -------------------------------------------------------------- */
+.timer {
+  font-size: 1.75rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  /* Fixed slot: tiles must never reflow as digits change width. */
+  min-width: 4.2ch;
+  display: inline-block;
+}
+.timer-warn {
+  color: var(--warn);
+}
+.timer-over {
+  color: #fff;
+}
+.timer-invalid {
+  color: var(--warn);
+}
+
+/* 1Hz, stepped, between two reds. Full-contrast flashing above 3Hz is a photosensitivity
+   hazard, and unbearable to stand next to for three hours. Runs on the compositor. */
+@keyframes pizza-blink {
+  0%,
+  49% {
+    background-color: #7f1d1d;
+    border-color: #ef4444;
+  }
+  50%,
+  100% {
+    background-color: #b91c1c;
+    border-color: #fca5a5;
+  }
+}
+.pcard.expired {
+  animation: pizza-blink 1s steps(1, end) infinite;
+  border-width: 2px;
+  color: #fff;
+}
+.pcard.expired .pcard-no,
+.pcard.expired .pcard-type,
+.pcard.expired .pcard-meta {
+  color: #ffe4e4;
+}
+/* The longer it sits, the harder it is to ignore. */
+.pcard.expired.very-late {
+  box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.45), 0 0 26px rgba(239, 68, 68, 0.5);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pcard.expired {
+    animation: none;
+    background-color: #b91c1c;
+    border-color: #fde047;
+    border-width: 4px;
+  }
+}
+
+/* --- Oven ---------------------------------------------------------------- */
+.oven {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 100%;
+  min-height: 0;
+}
+.oven-trays {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  /* Content-sized. A fixed share of the height clipped the timer and its +/- chips right
+     off the bottom of a card, which is the one thing on this screen that must never be
+     hidden. The trays scroll internally instead. */
+  flex: 0 0 auto;
+  min-height: 0;
+}
+.oven-decks {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: auto;
+}
+
+.tray,
+.deck {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 10px;
+  min-height: 0;
+}
+.deck {
+  /* Sized by its contents, with .oven-decks as the single scroll region. Sharing the
+     leftover height equally squeezed cards until they were cut in half. */
+  flex: 0 0 auto;
+  min-height: 132px;
+}
+.tray-head,
+.deck-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+.tray-title,
+.deck-title {
+  font-weight: 750;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.deck-title {
+  font-size: 1rem;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text);
+}
+.cap {
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+}
+/* Over capacity is a WARNING, never a rejection: the pizza is already in the oven, and a
+   silently refused drop is indistinguishable from a broken app. */
+.cap.over {
+  background: color-mix(in srgb, var(--warn) 28%, var(--surface-2));
+  color: var(--warn);
+}
+
+.slot-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-content: start;
+  min-height: 0;
+  flex: 1;
+}
+.slot-row .pcard {
+  width: 190px;
+  /* No min-height override: a baking card carries a timer AND its chip row, and anything
+     that crops either of those is worse than a slightly taller card. */
+  min-height: 0;
+  flex: none;
+  padding: 10px 12px;
+  gap: 4px;
+}
+.slot-row .pcard-name {
+  font-size: 1.15rem;
+}
+/* The waiting / unplaced trays can fill up; they scroll rather than pushing the decks off. */
+.tray .slot-row {
+  max-height: 232px;
+  overflow: auto;
+}
+
+.drop-target {
+  outline: 3px dashed var(--accent);
+  outline-offset: -3px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+.place-here {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius-sm);
+  color: var(--accent);
+  font-weight: 750;
+  min-height: 52px;
+  cursor: pointer;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  font-size: 0.95rem;
+  width: 100%;
+}
+.pcard.selected {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Draggables only - never a container, or the whole board stops scrolling on touch. */
+.draggable {
+  touch-action: none;
+  user-select: none;
+}
+.drag-overlay {
+  opacity: 0.92;
+  transform: rotate(-2deg);
+  cursor: grabbing;
+}
+
+.chipbar {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.chipbtn {
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  min-height: 40px;
+  padding: 0 11px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.chipbtn:disabled {
+  opacity: 0.4;
+}
+.pcard.expired .chipbtn {
+  background: rgba(0, 0, 0, 0.35);
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #fff;
+}
+
+/* --- Lists (operator screens) ------------------------------------------- */
+.olist {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.orow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.orow-no {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  min-width: 2.8em;
+  font-size: 1.05rem;
+}
+.orow-main {
+  flex: 1;
+  min-width: 160px;
+}
+.orow-name {
+  font-size: 1.32rem;
+  font-weight: 700;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+.orow-sub {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.orow-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.search {
+  font-size: 1.1rem;
+  min-height: 60px;
+}
+
+/* --- Ready board --------------------------------------------------------- */
+.ready-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+.ready-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  min-height: 160px;
+  padding: 16px;
+  border-radius: var(--radius);
+  background: linear-gradient(160deg, #065f46, #047857);
+  border: 1px solid #10b981;
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+  width: 100%;
+}
+.ready-card.cold {
+  background: linear-gradient(160deg, #78350f, #92400e);
+  border-color: var(--warn);
+}
+.ready-card.very-cold {
+  background: linear-gradient(160deg, #7f1d1d, #991b1b);
+  border-color: #ef4444;
+}
+.ready-no {
+  font-size: 2.6rem;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+.ready-name {
+  font-size: 1.7rem;
+  font-weight: 750;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+.ready-sub {
+  opacity: 0.85;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Tables (admin) ------------------------------------------------------ */
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+table.data {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+  min-width: 720px;
+}
+table.data th,
+table.data td {
+  text-align: left;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+table.data th {
+  color: var(--muted);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  position: sticky;
+  top: 0;
+  background: var(--surface-2);
+}
+table.data tr:last-child td {
+  border-bottom: none;
+}
+table.data td.wrap-cell {
+  white-space: normal;
+  max-width: 280px;
+}
+
+/* --- Bars (ingredient / type counts) ------------------------------------ */
+.bars {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.bar {
+  display: grid;
+  grid-template-columns: minmax(110px, 190px) 1fr auto;
+  gap: 10px;
+  align-items: center;
+}
+.bar-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bar-track {
+  background: var(--surface-2);
+  border-radius: 999px;
+  height: 22px;
+  overflow: hidden;
+}
+.bar-fill {
+  /* display:block is load-bearing: as an inline span it ignored height:100% and the bar
+     rendered as an empty track. */
+  display: block;
+  background: var(--accent);
+  height: 100%;
+  border-radius: 999px;
+  min-width: 3px;
+}
+.bar-n {
+  font-variant-numeric: tabular-nums;
+  font-weight: 750;
+  min-width: 2.2em;
+  text-align: right;
+}
+
+.section {
+  margin-bottom: 22px;
+}
+.section > h2 {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.maxw {
+  max-width: 980px;
+  margin: 0 auto;
+}
