@@ -4,6 +4,7 @@ import { ApiError, publicApi } from '../api.ts';
 import { addMyOrder, hasMyOrder } from '../myOrders.ts';
 import { Modal, NoteBadge, StatusChip } from '../components.tsx';
 import { QrCode } from '../qr.tsx';
+import { PayPalMark, WeroMark } from '../payIcons.tsx';
 import { buildTicketPdf } from '../ticketPdf.ts';
 import { canCustomerCancel, statusCopy } from '../statusCopy.ts';
 import { Brand } from './NewOrder.tsx';
@@ -148,6 +149,8 @@ export default function OrderDetail() {
   }
 
   const cancelled = order.cancelledAt !== null;
+  /** Still owes money: drives whether Pay is the loud thing on the page or just a record. */
+  const unpaid = order.status === STATUS.ORDERED;
   const stepIndex = STATUS_ORDER.indexOf(order.status);
 
   return (
@@ -228,74 +231,52 @@ export default function OrderDetail() {
         ) : null}
       </div>
 
-      {/* Appears the moment the crew ask for an online payment, and stays. Above the ticket
-          button on purpose: while this is on screen it is the only thing the guest has been
-          asked to do. */}
+      {/* --- Pay ------------------------------------------------------------------------
+          Appears the moment the crew ask for an online payment, and stays. First in the
+          stack because while it is on screen it is the ONE thing the guest has been asked
+          to do; everything below it is housekeeping. */}
       {payLinks && !cancelled ? (
-        <div className="card" style={{ marginTop: 12 }}>
-          <strong>Pay for your pizza</strong>
-          <div className="small muted">
-            {order.status === STATUS.ORDERED
-              ? 'The crew are waiting for this before they start making it.'
-              : 'Already paid? Then you are all set — this is just here for your records.'}
+        <div className={`card pay-card${unpaid ? ' pay-card-due' : ''}`}>
+          <div className="pay-head">
+            <strong>{unpaid ? 'Pay for your pizza' : 'Payment'}</strong>
+            {unpaid ? <span className="chip chip-warn">Waiting</span> : null}
           </div>
-          <div className="stack" style={{ marginTop: 10 }}>
+          <div className="small muted">
+            {unpaid
+              ? 'The crew start making it once this is done.'
+              : 'Already sorted — kept here for your records.'}
+          </div>
+          <div className="stack" style={{ marginTop: 12 }}>
             {payLinks.paypal ? (
               <a
-                className="btn btn-primary btn-block"
+                className={`btn btn-block pay-btn${unpaid ? ' btn-primary' : ''}`}
                 href={payLinks.paypal}
                 target="_blank"
                 // noreferrer is the load-bearing half: without it the payment page gets a
                 // handle on this tab and can navigate it somewhere else.
                 rel="noopener noreferrer"
               >
-                Pay with PayPal
+                <PayPalMark />
+                <span>Pay with PayPal</span>
               </a>
             ) : null}
             {payLinks.wero ? (
               <a
-                className="btn btn-block"
+                className="btn btn-block pay-btn"
                 href={payLinks.wero}
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                Pay with Wero
+                <WeroMark />
+                <span>Pay with Wero</span>
               </a>
             ) : null}
           </div>
-          <div className="hint">
-            Opens your payment app. Come back here afterwards and show the crew.
-          </div>
+          <div className="hint">Opens your payment app, then come back here.</div>
         </div>
       ) : null}
 
-      {!cancelled ? (
-        <button
-          type="button"
-          className={`btn btn-block${isNew ? ' btn-primary' : ''}`}
-          style={{ marginTop: 12 }}
-          onClick={downloadTicket}
-        >
-          Download ticket (PDF)
-        </button>
-      ) : null}
-
-      {error ? (
-        <div className="banner banner-warn" style={{ marginTop: 12 }}>
-          {error}
-        </div>
-      ) : null}
-
-      {canCustomerCancel(order) ? (
-        <button
-          type="button"
-          className="btn btn-ghost btn-block"
-          style={{ marginTop: 14 }}
-          onClick={() => setConfirming(true)}
-        >
-          Cancel this order
-        </button>
-      ) : null}
+      {error ? <div className="banner banner-warn" style={{ marginTop: 12 }}>{error}</div> : null}
 
       {cancelled ? (
         <Link className="btn btn-primary btn-block" to="/new" style={{ marginTop: 14 }}>
@@ -303,44 +284,72 @@ export default function OrderDetail() {
         </Link>
       ) : null}
 
-      {!saved ? (
-        <button
-          type="button"
-          className="btn btn-block"
-          style={{ marginTop: 10 }}
-          onClick={() => {
-            addMyOrder({
-              token,
-              name: order.customerName,
-              typeName: order.pizzaTypeName,
-              createdAt: order.createdAt,
-            });
-            setSaved(true);
-          }}
-        >
-          Add to this device
-        </button>
+      {/* --- Keeping the ticket ----------------------------------------------------------
+          Two ways to not lose it, side by side rather than as two more full-width blocks in
+          a column of them. Neither is the point of the page, and stacking them at the same
+          weight as everything else is what made this screen read as a pile of buttons. */}
+      {!cancelled ? (
+        <div className="oactions">
+          <button type="button" className="btn" onClick={downloadTicket}>
+            ⬇ Ticket (PDF)
+          </button>
+          {saved ? (
+            // Stays put once saved rather than vanishing: a button that disappears on tap
+            // reads as a glitch, and leaves a hole where the other button used to sit.
+            <button type="button" className="btn" disabled>
+              ✓ On this device
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                addMyOrder({
+                  token,
+                  name: order.customerName,
+                  typeName: order.pizzaTypeName,
+                  createdAt: order.createdAt,
+                });
+                setSaved(true);
+              }}
+            >
+              ☆ Save to device
+            </button>
+          )}
+        </div>
       ) : null}
 
-      {/* Collapsed, not removed. This link is the capability that addresses the order, and
-          printing it in the open meant anyone glancing at the phone could read it. The QR
-          above carries the same thing, but only to a camera deliberately aimed at it. */}
-      <details className="card muted" style={{ marginTop: 16 }}>
-        <summary className="small" style={{ fontWeight: 650, cursor: 'pointer' }}>
-          Open this order on another device
-        </summary>
-        <div className="mono" style={{ marginTop: 8 }}>{`${window.location.origin}/order/${token}`}</div>
-        <div className="hint">
-          This link is the key to your order: anyone who has it can see it, and cancel it while it
-          is still unpaid. If you lose it, just tell the crew your name at the counter.
-        </div>
-      </details>
+      {/* --- Quiet zone ------------------------------------------------------------------
+          Below a rule, because none of this is part of collecting a pizza. Cancelling lives
+          here too: it is rare, irreversible, and should not sit in the same visual tier as
+          "download my ticket". It still opens a confirm dialog. */}
+      <div className="ofoot">
+        {/* Collapsed, not removed. This link is the capability that addresses the order, and
+            printing it in the open meant anyone glancing at the phone could read it. The QR
+            above carries the same thing, but only to a camera deliberately aimed at it. */}
+        <details className="ofoot-details">
+          <summary>Open this order on another device</summary>
+          <div className="mono" style={{ marginTop: 8 }}>
+            {`${window.location.origin}/order/${token}`}
+          </div>
+          <div className="hint">
+            This link is the key to your order: anyone who has it can see it, and cancel it
+            while it is still unpaid. If you lose it, just tell the crew your name at the
+            counter.
+          </div>
+        </details>
 
-      <p style={{ marginTop: 16 }}>
-        <Link className="link" to="/">
-          ← All my orders
-        </Link>
-      </p>
+        <div className="ofoot-row">
+          <Link className="link" to="/">
+            ← All my orders
+          </Link>
+          {canCustomerCancel(order) ? (
+            <button type="button" className="btn-quiet-danger" onClick={() => setConfirming(true)}>
+              Cancel this order
+            </button>
+          ) : null}
+        </div>
+      </div>
 
       {confirming ? (
         <Modal

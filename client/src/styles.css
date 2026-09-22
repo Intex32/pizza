@@ -279,6 +279,9 @@ p {
   color: var(--text);
   font: inherit;
   font-weight: 650;
+  /* Eleven of these are <a> elements, which browsers underline by default - so every
+     link-shaped button in the app was drawing a line through its own label. */
+  text-decoration: none;
   border-radius: var(--radius-sm);
   min-height: var(--tap);
   padding: 0 18px;
@@ -660,4 +663,114 @@ label.field {
   /* letter-spacing pads AFTER the last glyph too, so this re-centres the ink. */
   padding-left: 0.2em;
   color: var(--accent);
+}
+
+/* --- Customer order page: action layout -----------------------------------
+   This page had five full-width buttons stacked at identical weight - pay,
+   ticket, save, cancel, order-again - which gave a guest no way to tell the
+   one thing they had been asked to do from the housekeeping. The rules below
+   are all about restoring that difference, not about decoration. */
+
+/* Pay is the loudest thing on the page while money is owed, and recedes to an
+   ordinary card once it is not. */
+.pay-card {
+  margin-top: 12px;
+}
+.pay-card-due {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+}
+.pay-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.chip-warn {
+  background: var(--warn-soft);
+  color: var(--text);
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent);
+}
+
+/* The mark sits at the LEFT edge rather than centred with the label, so two
+   stacked pay buttons line their icons up instead of drifting with text width. */
+.pay-btn {
+  position: relative;
+  justify-content: center;
+}
+.pay-btn .pay-mark {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.pay-mark {
+  display: block;
+  flex: none;
+}
+
+/* Two secondary actions side by side instead of two more full-width slabs. */
+.oactions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+.oactions .btn {
+  width: 100%;
+}
+/* Below this they no longer fit their labels on one line. */
+@media (max-width: 360px) {
+  .oactions {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Everything that is not "collect a pizza", pushed below a rule. */
+.ofoot {
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.ofoot-details > summary {
+  font-size: 0.9rem;
+  font-weight: 650;
+  color: var(--muted);
+  cursor: pointer;
+  /* A comfortable target without looking like a button. */
+  padding: 6px 0;
+}
+.ofoot-details[open] > summary {
+  color: var(--text);
+}
+.ofoot-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* Cancelling is rare and irreversible. It must be reachable and must NOT look
+   like the other actions - so it is text, in the danger colour, with a real
+   tap target and a confirm dialog behind it. */
+.btn-quiet-danger {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 8px 0;
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 650;
+  color: var(--danger);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  min-height: 40px;
+}
+.btn-quiet-danger:hover {
+  filter: brightness(1.1);
 }

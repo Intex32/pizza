@@ -458,7 +458,7 @@ function OrderRow({
           No-show
         </button>
         <button type="button" className="btn btn-ok btn-advance" disabled={locked} onClick={onPay}>
-          MOVE TO PREP
+          AB GEHT's
         </button>
       </div>
     </div>
