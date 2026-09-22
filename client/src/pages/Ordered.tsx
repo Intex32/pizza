@@ -112,11 +112,15 @@ export default function Ordered() {
   return (
     <div className="maxw">
       <div className="row wrap" style={{ marginBottom: 12 }}>
+        {/* Deliberately NOT autoFocus. This fires on screen mount, and on a phone or a
+            counter tablet that throws the on-screen keyboard up over the very list the
+            crew opened the screen to read - before anyone has asked to search anything.
+            The other autoFocus attributes in this app are all inside dialogs someone
+            opened in order to type; this one was not. */}
         <input
           className="input search"
           style={{ flex: 1, minWidth: 200 }}
           placeholder="Search by name…"
-          autoFocus
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
