@@ -677,7 +677,11 @@ body:has(.kiosk) {
 
 /* Draggables only - never a container, or the whole board stops scrolling on touch. */
 .draggable {
-  touch-action: none;
+  /* pan-y, NOT none. `none` hands every gesture to the page, so on a touch tablet a finger
+     starting on a card could not scroll the deck list either. pan-y lets the browser scroll
+     a swipe, while a still finger held for the sensor's 180ms still becomes a drag - the two
+     gestures no longer compete. Phones drop the class entirely; see usePhoneLayout. */
+  touch-action: pan-y;
   user-select: none;
 }
 .drag-overlay {

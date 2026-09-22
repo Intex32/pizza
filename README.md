@@ -255,6 +255,12 @@ is what survives an oven mitt and a wet finger.
 card and then tap the destination. Dropping it on an occupied slot **swaps the two pizzas**.
 Neither timer is touched by any move — a pizza that has been in for six minutes still says so.
 
+**Dragging is off on phones**, deliberately. A draggable card has to claim every touch
+gesture that starts on it, and on a phone the board is almost entirely cards — so the screen
+became impossible to scroll. Tapping and the `⇄` button do the same job, so the drag is the
+part that gives way. Tablets and desktops keep it, and there a swipe scrolls while a held
+finger still starts a drag.
+
 **Nudging a timer.** `−0:15` and `+0:15` on each baking card. Fine-grained on purpose: the
 adjustment that actually gets used is "a bit longer", not "a whole minute longer". The value
 sent is absolute, so a double-tap on bad wifi cannot silently add thirty seconds twice.

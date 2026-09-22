@@ -14,6 +14,7 @@ import { useLive } from '../live.tsx';
 import { useFocusCard, useFocusParam, useFocusedOrderId } from '../useFocusOrder.ts';
 import { EmptyState, Modal, SoundToggle, useBoardStale } from '../components.tsx';
 import { useWakeLock } from '../useWakeLock.ts';
+import { usePhoneLayout } from '../usePhoneLayout.ts';
 import { bakeState, elapsed, useNow } from '../useNow.ts';
 import { maybeAlarm } from '../alarm.ts';
 import { STATUS } from '../../../shared/status.ts';
@@ -897,9 +898,15 @@ function OvenCard({
   const t = bakeState(order.bakingStartedAt, order.bakeSeconds, now);
   const isBaking = order.status === STATUS.BAKING;
 
+  // Dragging is off on a phone. `touch-action: none` is what makes a drag possible, and it
+  // is also what stops a finger that lands on a card from scrolling the board - which on a
+  // phone is nearly every finger. The move button and tap-to-place cover the same ground.
+  const phone = usePhoneLayout();
+  const canDrag = draggable && !phone;
+
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `order-${order.id}`,
-    disabled: !draggable,
+    disabled: !canDrag,
   });
   const focusId = useFocusParam();
   const { ref: focusRef, focused } = useFocusCard<HTMLDivElement>(order.id, focusId);
@@ -915,7 +922,7 @@ function OvenCard({
 
   const cls = [
     'pcard',
-    draggable ? 'draggable' : '',
+    canDrag ? 'draggable' : '',
     selected ? 'selected' : '',
     // NOT folded into 'selected'. On this screen .selected also means "armed - tap a slot to
     // move it", so reusing it would make a scanned pizza arrive armed and the next tap would
@@ -942,8 +949,9 @@ function OvenCard({
         }
       }}
       // dnd-kit's attributes supply role="button" and tabIndex; ours would be overwritten.
+      // They stay even when dragging is off, because the card is still a tap target.
       {...attributes}
-      {...listeners}
+      {...(canDrag ? listeners : undefined)}
     >
       {p?.failed ? <span className="badge-unsaved">not saved</span> : null}
       <span className="pcard-head">
