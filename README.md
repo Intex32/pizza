@@ -280,12 +280,25 @@ Pizza types and oven layers survive a purge, so you are ready for next time.
   you have taken payment and tapped MOVE TO PREP their button disappears.
 - **Two people called Anna** are told apart by their order number and pizza, both of which are on
   every row and every card. The number is what to call out.
-- **The connection indicator** in the corner counts seconds since the last update. If it turns
-  red and the board greys out, that screen is stale — check the Wi-Fi. A ticking number is used
-  rather than a green dot on purpose: a dot can be painted by code that has already died.
-- **Phones work too.** Below 760px the crew screens scroll like a normal page instead of
-  locking to the viewport, the oven trays stack above the decks, and slots and buttons go
-  full width. A phone is a perfectly good second prep station.
+- **Silence means it is working.** There is no "Live" badge in the corner — a permanent green
+  thing is noise, and it trains you to stop looking at the one spot that has to be believed
+  when it does speak up. Nothing appears until the board has gone quiet for **10 seconds**,
+  and then the corner shows **Not live · Ns**, counting up. At 30s a banner offers Retry; at
+  60s the whole board greys out. A ticking number is used rather than a coloured dot on
+  purpose: a dot can be painted by code that has already died, whereas a number that keeps
+  moving is proving itself.
+- **A tablet you have just woken** may flash "Not live" for about a second. That is honest —
+  polling pauses while the screen is off, so the data really is old until the first poll
+  lands.
+- **Phones, tablets and desktops all work.** Below 760px the crew screens scroll like a
+  normal page instead of locking to the viewport, the oven trays stack above the decks, and
+  slots and buttons go full width. A phone is a perfectly good second prep station.
+- **The top bar adapts rather than scrolling sideways.** Below 900px — which includes an iPad
+  in portrait — Menu, Admin and Log out fold into a single **⋯** button, because they are the
+  three things nobody touches mid-service. Below 760px the `ORD · PREP · OVEN · READY` counts
+  drop onto their own full-width row, so the number you glance at from across a bench is never
+  the thing that gets squeezed. 🍕 and **🔎 Find** stay put at every width. Nothing is ever
+  parked off the right-hand edge where you cannot see it.
 - **Tablets:** set the screen timeout to Never. The app asks to keep the screen awake, but
   browsers only allow that over https, which a plain LAN address is not.
 - **One tab per device.** Nothing breaks with more, it is just wasted polling.

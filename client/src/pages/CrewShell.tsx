@@ -98,39 +98,41 @@ function ShellFrame() {
 
   return (
     <div className="kiosk crew-shell">
+      {/* Order here is deliberate and drives the responsive layout in kiosk.css:
+          home and Find stay reachable at every width, the counts drop onto their own
+          full-width row on a phone, and Menu/Admin/Log out fold into one button below
+          900px. Nothing is ever parked off the right edge where it cannot be seen. */}
       <div className="crew-bar">
-        <Link to="/crew" className="btn btn-sm" title="All screens" style={{ flex: 'none' }}>
+        <Link to="/crew" className="btn btn-sm" title="All screens">
           🍕
         </Link>
-        {/* Second in the bar on purpose. .crew-bar is overflow-x: auto with a hidden
-            scrollbar, so on a 375px phone anything past the right edge is effectively
-            invisible - which is already true of Menu, Admin and Log out. This has to stay
-            reachable at scroll origin, because phones are exactly what it is built for. */}
         <button
           type="button"
           className="btn btn-sm"
-          style={{ flex: 'none' }}
           title="Find an order by QR or pickup code"
           onClick={() => setFinding(true)}
         >
           🔎 Find
         </button>
         <CountsStrip />
-        <span className="spacer" style={{ minWidth: 8 }} />
-        <Link to="/crew/menu" className="btn btn-sm btn-ghost" style={{ flex: 'none' }}>
+        <span className="spacer" />
+        {/* Wide screens show these three inline; below 900px CSS hides them and reveals
+            the overflow button instead. Both are always rendered, so there is no width
+            listener to get out of step with the media query. */}
+        <Link to="/crew/menu" className="btn btn-sm btn-ghost bar-wide">
           Menu
         </Link>
-        <Link to="/crew/admin" className="btn btn-sm btn-ghost" style={{ flex: 'none' }}>
+        <Link to="/crew/admin" className="btn btn-sm btn-ghost bar-wide">
           Admin
         </Link>
         <button
           type="button"
-          className="btn btn-sm btn-ghost"
-          style={{ flex: 'none' }}
+          className="btn btn-sm btn-ghost bar-wide"
           onClick={() => void logout()}
         >
           Log out
         </button>
+        <BarOverflow onLogout={logout} />
         <ConnectionBar />
       </div>
 
@@ -144,6 +146,66 @@ function ShellFrame() {
       <Toasts />
 
       {finding ? <FindOrderModal onClose={() => setFinding(false)} /> : null}
+    </div>
+  );
+}
+
+/**
+ * Menu, Admin and Log out behind one button.
+ *
+ * They are the three things nobody touches mid-service, so on a narrow screen they are the
+ * right things to cost an extra tap - rather than being pushed off the edge of a bar that
+ * scrolls sideways with no visible scrollbar, which is where they used to end up.
+ */
+function BarOverflow({ onLogout }: { onLogout: () => void }) {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open]);
+
+  return (
+    <div className="bar-more">
+      <button
+        type="button"
+        className="btn btn-sm btn-ghost"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="More screens"
+        onClick={() => setOpen((v) => !v)}
+      >
+        ⋯
+      </button>
+      {open ? (
+        <>
+          {/* A full-screen catcher rather than a document listener: it closes on the first
+              tap anywhere, including on the bar itself, with no teardown to forget. */}
+          <div className="bar-more-backdrop" onClick={() => setOpen(false)} />
+          <div className="bar-menu" role="menu">
+            <Link role="menuitem" to="/crew/menu" onClick={() => setOpen(false)}>
+              Menu
+            </Link>
+            <Link role="menuitem" to="/crew/admin" onClick={() => setOpen(false)}>
+              Admin
+            </Link>
+            <button
+              role="menuitem"
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                void onLogout();
+              }}
+            >
+              Log out
+            </button>
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }

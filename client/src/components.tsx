@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { NavLink } from 'react-router';
 import { useLive } from './live.tsx';
@@ -174,29 +174,45 @@ export function Modal({
 export function useSecondsSinceFrame(): number {
   const { lastFrameAt } = useLive();
   const now = useNow(1000);
-  if (lastFrameAt === 0) return -1;
-  return Math.max(0, Math.round((now - lastFrameAt) / 1000));
+  // A screen that has NEVER had a frame is a screen that is down - not a separate state - so
+  // it counts from when it mounted. Previously this returned -1 forever, which meant a tablet
+  // that could not reach the server at all sat on "connecting…" and never tripped the offline
+  // banner or the stale board.
+  const mountedAt = useRef(Date.now());
+  const since = lastFrameAt === 0 ? mountedAt.current : lastFrameAt;
+  return Math.max(0, Math.round((now - since) / 1000));
 }
 
+/** How long the board has to go quiet before it is worth saying so. Polling is every 1s, so
+ *  this is ten missed frames - past any single slow request, short of a real problem. */
+const QUIET_BEFORE_WARNING_S = 10;
+
 /**
- * A green dot is painted by the same JavaScript that might be dead. A TICKING number is
- * self-verifying, which is why the count is the point and the dot is decoration.
+ * Silent while it is working.
+ *
+ * There is no "Live" badge: a permanent green thing in the corner is noise, and worse, it
+ * trains people to stop looking at the one spot that has to be believed when it does speak
+ * up. So this renders NOTHING until the board has gone quiet, and then it is unmissable.
+ *
+ * The count is still the point and the dot is still decoration - a dot is painted by the same
+ * JavaScript that might be dead, whereas a ticking number is self-verifying.
  */
 export function ConnectionBar() {
   const secs = useSecondsSinceFrame();
-  if (secs < 0) {
-    return (
-      <span className="conn conn-stale">
-        <span className="conn-dot" />
-        connecting…
-      </span>
-    );
-  }
-  const cls = secs >= 30 ? 'conn-dead' : secs >= 5 ? 'conn-stale' : 'conn-live';
+  if (secs < QUIET_BEFORE_WARNING_S) return null;
+
+  const mins = Math.floor(secs / 60);
+  const rest = secs % 60;
   return (
-    <span className={`conn ${cls}`} title="Seconds since the last update from the server">
+    <span
+      className={`conn ${secs >= 30 ? 'conn-dead' : 'conn-stale'}`}
+      title="Nothing has arrived from the server for this long. Check the Wi-Fi."
+    >
       <span className="conn-dot" />
-      Live · {secs}s
+      {/* "Not live" rather than "offline": it is also what you see for a second on a tablet
+          you have just woken, where the connection is fine and only the data is old. */}
+      Not live · {mins > 0 ? `${mins}m ` : ''}
+      {rest}s
     </span>
   );
 }

@@ -97,11 +97,66 @@ body:has(.kiosk) {
   background: #0d0b11;
   border-bottom: 1px solid var(--border);
   flex: none;
-  overflow-x: auto;
-  scrollbar-width: none;
 }
-.crew-bar::-webkit-scrollbar {
+/* Every child keeps its natural width; only the spacer eats the slack. Previously each
+   button carried its own inline flex:'none' and one omission would have squashed it. */
+.crew-bar > * {
+  flex: none;
+}
+.crew-bar > .spacer {
+  flex: 1 1 auto;
+  min-width: 8px;
+}
+
+/* --- Overflow menu -------------------------------------------------------
+   Hidden on wide screens, where Menu/Admin/Log out sit in the bar itself. */
+.bar-more {
   display: none;
+  position: relative;
+}
+.bar-more-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+}
+.bar-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 31;
+  min-width: 172px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+}
+.bar-menu > a,
+.bar-menu > button {
+  appearance: none;
+  background: none;
+  border: 0;
+  margin: 0;
+  /* 48px, not the 56px --tap used for line-cook buttons: this menu is read and aimed at,
+     not jabbed at with an oven mitt, and three 56px rows overhang a small phone. */
+  min-height: 48px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  border-radius: 8px;
+  font: inherit;
+  font-weight: 650;
+  color: var(--text);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.bar-menu > a:active,
+.bar-menu > button:active {
+  background: var(--surface-2);
 }
 .crew-body {
   flex: 1;
@@ -134,11 +189,10 @@ body:has(.kiosk) {
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: var(--ok);
+  /* Amber by default: this element now only exists when something is wrong, so there is no
+     healthy green state left for it to fall back to. */
+  background: var(--warn);
   flex: none;
-}
-.conn-live {
-  color: var(--ok);
 }
 .conn-stale {
   color: var(--warn);
@@ -912,6 +966,18 @@ table.data td.wrap-cell {
    100dvh with hidden overflow is right for a mounted tablet and unusable on a
    handset, where the oven decks alone are taller than the viewport.
    ============================================================================ */
+/* An iPad in portrait is 768px: the full bar fits there only on paper, and one long count
+   would push Log out off the edge. Folding at 900px means the trio is either fully visible
+   or fully in the menu - never half-lost. */
+@media (max-width: 900px) {
+  .crew-bar .bar-wide {
+    display: none;
+  }
+  .bar-more {
+    display: block;
+  }
+}
+
 @media (max-width: 760px) {
   .crew-shell {
     height: auto;
@@ -923,11 +989,35 @@ table.data td.wrap-cell {
     overflow: visible;
     padding: 10px;
   }
+  /* Two rows rather than one that scrolls sideways. The counts are the thing you glance at
+     from across a bench, so they get a full-width row of their own instead of being the
+     first casualty of a narrow screen. */
   .crew-bar {
     position: sticky;
     top: 0;
     z-index: 20;
+    flex-wrap: wrap;
     gap: 8px;
+    row-gap: 6px;
+    padding: 6px 10px;
+  }
+  /* order puts it last in the flow, flex-basis 100% guarantees it a line to itself. */
+  .crew-bar > .counts {
+    order: 10;
+    flex: 1 0 100%;
+  }
+  .counts .count {
+    flex: 1;
+    justify-content: center;
+    padding: 6px 4px;
+  }
+
+  /* The bar is sticky and now two rows tall, so a card scrolled to centre by a scan would
+     otherwise sit underneath it. */
+  .kiosk .pcard,
+  .kiosk .orow,
+  .kiosk .ready-card {
+    scroll-margin: 120px;
   }
 
   /* Stack the queue above the decks rather than squeezing them side by side. */
