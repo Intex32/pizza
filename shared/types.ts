@@ -76,6 +76,16 @@ export type Settings = {
   weroLink: string;
 };
 
+/** What an imported config file actually changed. Lives here because the Admin screen
+ *  renders it and the server produces it. */
+export type ImportSummary = {
+  pizzaTypes: { added: number; updated: number };
+  ovenLayers: { added: number; updated: number };
+  settingsChanged: string[];
+  /** Named, so the crew can see that nothing of theirs was removed. */
+  keptNotInFile: { pizzaTypes: string[]; ovenLayers: string[] };
+};
+
 /** Where to send an online payment. Empty string means that method is not offered. */
 export type PaymentLinks = { paypal: string; wero: string };
 

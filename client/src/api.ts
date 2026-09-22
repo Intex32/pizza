@@ -1,6 +1,7 @@
 import type {
   CrewState,
   CustomerOrder,
+  ImportSummary,
   Order,
   PaymentLinks,
   OvenLayer,
@@ -8,6 +9,7 @@ import type {
   PublicConfig,
 } from '../../shared/types.ts';
 import type { PaymentMethod } from '../../shared/payment.ts';
+
 
 export class ApiError extends Error {
   status: number;
@@ -228,6 +230,11 @@ export const crewApi = {
 
   settings: (body: { ordersOpen?: boolean; paypalLink?: string; weroLink?: string }) =>
     api.patch<void>('/api/crew/settings', body),
+
+  /** The raw JSON, so the page can hand it straight to a download. */
+  exportConfig: () => api.get<unknown>('/api/crew/config-export'),
+  importConfig: (config: unknown) =>
+    api.post<{ summary: ImportSummary }>('/api/crew/config-import', config),
 
   /** Reveals the payment links on the guest's own page. Does NOT move the order. */
   requestPayment: (id: number) =>

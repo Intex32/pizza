@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { crewApi } from '../api.ts';
 import { useLive } from '../live.tsx';
 import { Modal, PaymentChip } from '../components.tsx';
 import { whenLabel } from './Ordered.tsx';
 import { STATUS_LABEL, STATUS_ORDER } from '../../../shared/status.ts';
 import type { Status } from '../../../shared/status.ts';
+import type { ImportSummary } from '../../../shared/types.ts';
 import { countByPayment, countByType, rollUpIngredients } from '../../../shared/menu.ts';
 import { PAYMENT_EMOJI, PAYMENT_LABEL, PAYMENT_METHODS } from '../../../shared/payment.ts';
 import type { Order } from '../../../shared/types.ts';
@@ -143,6 +144,8 @@ export default function Admin() {
             </button>
           </div>
           <PaymentLinksCard />
+
+          <ConfigIoCard />
 
           <div className="row-between wrap" style={{ gap: 10, marginTop: 14 }}>
             <div>
@@ -550,6 +553,138 @@ function PaymentLinksCard() {
           </button>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Carrying the SETUP between databases: the menu, the oven decks, the payment links.
+ *
+ * The reason this exists is in server/configIo.ts - the documented way through a schema
+ * change is to delete the database, and a menu somebody spent an hour typing in should not
+ * die with it. It is also how the test Pi and the real one end up agreeing.
+ */
+function ConfigIoCard() {
+  const { refresh, pushToast } = useLive();
+  const [busy, setBusy] = useState(false);
+  const [summary, setSummary] = useState<ImportSummary | null>(null);
+  const [error, setError] = useState('');
+  const fileRef = useRef<HTMLInputElement | null>(null);
+
+  const doExport = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const config = await crewApi.exportConfig();
+      // A Blob rather than a data: URL - a menu with long ingredient lists can outgrow what
+      // some browsers accept in a URL, and it fails by silently downloading nothing.
+      const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `pizza-night-config-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      // Revoked on the next turn of the loop: revoking immediately races the download in
+      // Safari and produces an empty file.
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not build the export.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const doImport = async (file: File) => {
+    setBusy(true);
+    setError('');
+    setSummary(null);
+    try {
+      const text = await file.text();
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        throw new Error('That file is not valid JSON.');
+      }
+      const res = await crewApi.importConfig(parsed);
+      setSummary(res.summary);
+      await refresh();
+      pushToast('Config imported');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not import that file.');
+    } finally {
+      setBusy(false);
+      // Cleared so choosing the SAME file again still fires a change event.
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
+  return (
+    <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+      <strong>Menu &amp; settings file</strong>
+      <div className="small muted">
+        The menu, the oven decks and the payment links as one file. No orders, no password.
+        Handy before wiping the database, or to copy a setup onto another Pi.
+      </div>
+
+      <div className="oactions" style={{ marginTop: 10 }}>
+        <button type="button" className="btn" disabled={busy} onClick={() => void doExport()}>
+          ⬇ Export
+        </button>
+        <button
+          type="button"
+          className="btn"
+          disabled={busy}
+          onClick={() => fileRef.current?.click()}
+        >
+          ⬆ Import…
+        </button>
+      </div>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="application/json,.json"
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void doImport(file);
+        }}
+      />
+
+      <div className="hint">
+        Importing only adds and updates — it never deletes a pizza type or a deck, so it is
+        safe to run mid-evening.
+      </div>
+
+      {error ? (
+        <div className="banner banner-warn" style={{ marginTop: 10 }}>
+          {error}
+        </div>
+      ) : null}
+
+      {summary ? (
+        <div className="banner banner-info" style={{ marginTop: 10 }}>
+          <strong>Imported.</strong>
+          <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+            <li>
+              Menu: {summary.pizzaTypes.added} added, {summary.pizzaTypes.updated} updated
+            </li>
+            <li>
+              Decks: {summary.ovenLayers.added} added, {summary.ovenLayers.updated} updated
+            </li>
+            <li>
+              {summary.settingsChanged.length > 0
+                ? `Changed: ${summary.settingsChanged.join(', ')}`
+                : 'Payment links unchanged'}
+            </li>
+          </ul>
+          {summary.keptNotInFile.pizzaTypes.length > 0 ? (
+            <div className="small" style={{ marginTop: 6 }}>
+              Kept, not in the file: {summary.keptNotInFile.pizzaTypes.join(', ')}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

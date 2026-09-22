@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import { exportConfig, importConfig } from '../configIo.ts';
+import { bumpVersion, tx } from '../db.ts';
 import type { Request } from 'express';
 import { buildState, findOrdersByPickupCode, getOrderByToken, getStateVersion } from '../db.ts';
 import {
@@ -292,6 +294,35 @@ crewRouter.patch('/pizza-types/:id', (req, res) => {
 crewRouter.delete('/pizza-types/:id', (req, res) => {
   deletePizzaType(idParam(req));
   res.status(204).end();
+});
+
+// --- Config export / import ---------------------------------------------------------------
+
+/**
+ * The evening's SETUP as a file: menu, oven decks, payment links. No orders, no password.
+ * Exists because the documented way through a schema change is to delete the database, and
+ * a menu somebody spent an hour typing in should survive that.
+ */
+crewRouter.get('/config-export', (_req, res) => {
+  const config = exportConfig();
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader(
+    'Content-Disposition',
+    `attachment; filename="pizza-night-config-${new Date(config.exportedAt)
+      .toISOString()
+      .slice(0, 10)}.json"`,
+  );
+  res.end(JSON.stringify(config, null, 2));
+});
+
+/**
+ * One transaction for the whole file: a malformed entry half way down leaves the menu
+ * exactly as it was rather than half-imported. The merge itself never deletes anything.
+ */
+crewRouter.post('/config-import', (req, res) => {
+  const summary = tx(() => importConfig(req.body));
+  bumpVersion();
+  res.json({ summary });
 });
 
 // --- Settings ---------------------------------------------------------------------------------
