@@ -3,8 +3,39 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#1a1a1e" />
+
+    <!-- Tints the system chrome around the app. Split by scheme so a guest on a light phone
+         does not get a dark bar above a cream page. -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#fbf7f2" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#17130f" />
+
     <title>Pizza Night</title>
+
+    <!-- Installed to a home screen, this runs without browser chrome. There is deliberately
+         NO service worker: one cannot register over plain http on a LAN anyway, and caching
+         a shell whose whole job is to show live oven timers would be a liability, not a
+         feature. See the PWA section of the README. -->
+    <link rel="manifest" href="/manifest.webmanifest" id="app-manifest" />
+    <script>
+      // Guests and crew install the same app from different places. Pointing them at
+      // different manifests means a tablet added from /crew/oven reopens on /crew - which
+      // already redirects to the last screen that tablet was on - instead of dropping the
+      // kitchen onto the guest ordering page.
+      if (location.pathname.indexOf('/crew') === 0) {
+        document.getElementById('app-manifest').href = '/manifest-crew.webmanifest';
+      }
+    </script>
+
+    <!-- iOS predates the manifest and still reads its own tags. This is what actually gives
+         an iPad a full-screen kitchen display, and it needs no https. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <!-- "black", not "black-translucent": translucent puts the crew bar under the clock and
+         the notch, and nothing in this app is laid out to expect that. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="apple-mobile-web-app-title" content="Pizza Night" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" href="/icon-192.png" type="image/png" />
   </head>
   <body>
     <div id="root"></div>

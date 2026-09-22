@@ -5,6 +5,10 @@ import react from '@vitejs/plugin-react';
 // would select the config file without changing the root.
 export default defineConfig({
   plugins: [react()],
+  // Manifest and icons. Under client/ rather than the default <root>/public on purpose: the
+  // Dockerfile already does `COPY client/ ./client/`, so a root-level public/ would build
+  // fine on a laptop and then be silently missing from the image.
+  publicDir: 'client/public',
   build: { outDir: 'client/dist', emptyOutDir: true },
   server: {
     host: true, // so tablets on the LAN can reach the dev server

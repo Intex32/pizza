@@ -92,7 +92,10 @@ body:has(.kiosk) {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 12px;
+  /* Installed to a home screen there is no browser chrome to keep the bar clear of a notch,
+     and in landscape the inset is on the side. max() so nothing shrinks below the normal
+     padding on a device with no insets at all. */
+  padding: 0 max(12px, env(safe-area-inset-right)) 0 max(12px, env(safe-area-inset-left));
   min-height: 52px;
   background: #0d0b11;
   border-bottom: 1px solid var(--border);
@@ -162,7 +165,8 @@ body:has(.kiosk) {
   flex: 1;
   min-height: 0; /* lets the oven grid own its own height instead of overflowing */
   overflow: auto;
-  padding: 14px;
+  padding: 14px max(14px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom))
+    max(14px, env(safe-area-inset-left));
 }
 .crew-body.no-scroll {
   overflow: hidden;
@@ -987,7 +991,10 @@ table.data td.wrap-cell {
   .crew-body,
   .crew-body.no-scroll {
     overflow: visible;
-    padding: 10px;
+    /* Repeats the safe-area max() from the base rule: a plain `padding: 10px` here would
+       override it, and a phone held in landscape is exactly where the side inset bites. */
+    padding: 10px max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom))
+      max(10px, env(safe-area-inset-left));
   }
   /* Two rows rather than one that scrolls sideways. The counts are the thing you glance at
      from across a bench, so they get a full-width row of their own instead of being the
@@ -999,7 +1006,7 @@ table.data td.wrap-cell {
     flex-wrap: wrap;
     gap: 8px;
     row-gap: 6px;
-    padding: 6px 10px;
+    padding: 6px max(10px, env(safe-area-inset-right)) 6px max(10px, env(safe-area-inset-left));
   }
   /* order puts it last in the flow, flex-basis 100% guarantees it a line to itself. */
   .crew-bar > .counts {

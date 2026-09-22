@@ -63,6 +63,40 @@ screen — so you can see how far behind you are without leaving your station. `
 
 ---
 
+## Installing it on a device
+
+The app is installable. Add it to a home screen and it opens full screen, with no address bar
+and no tab strip — which on a wall tablet means more board and nothing to navigate away by
+accident.
+
+- **iPad / iPhone:** open the screen you want that device to be, then Share → **Add to Home
+  Screen**. This is the one that matters for the kitchen, and it works over plain http.
+- **Android:** Chrome's menu → **Add to Home screen**. You get an icon; whether it opens
+  chrome-free depends on the browser (see the caveat below).
+
+**Crew tablets and guests get different apps on purpose.** A tablet added from a crew screen
+installs as **Crew** and opens at `/crew`, which redirects to whichever screen that tablet was
+last parked on — so the oven tablet reopens on the oven. A guest's phone installs as **Pizza
+Night** and opens on their own orders. Two manifests, picked by the path you install from.
+
+### What it does not do, and why
+
+**There is no service worker, and there cannot be one.** Browsers only expose that API in a
+secure context, and a plain `http://192.168.x.x` address is not one — `navigator.serviceWorker`
+is literally `undefined` there. That has two consequences:
+
+- **No offline mode.** This is the right outcome anyway. Every screen here is a live view of
+  one database; a cached shell showing last night's orders and a frozen oven timer would be
+  worse than a screen that honestly says it is not live.
+- **Android will not show a true install prompt**, since Chrome requires https plus a service
+  worker before it offers one. "Add to Home screen" still works, it is just a shortcut. iOS
+  has no such requirement, which is why iPads get the full-screen treatment regardless.
+
+If you ever put the app behind https with a certificate the devices trust, Android installs
+properly too — and nothing here needs changing for that.
+
+---
+
 ## Tickets: the QR and the pickup code
 
 Every order gets a **QR code** and a **five-character pickup code**, both shown on the guest's
