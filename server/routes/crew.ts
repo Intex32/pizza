@@ -10,6 +10,8 @@ import {
   deletePizzaType,
   patchOrder,
   placeOrder,
+  readyOrder,
+  requeueOrder,
   remakeOrder,
   setBakeSeconds,
   setUnpaid,
@@ -159,6 +161,19 @@ crewRouter.post('/orders/:id/place', (req, res) => {
     nullableInt(body, 'ovenSlot', { min: 0, max: 11 }),
   );
   res.json({ order });
+});
+
+/**
+ * Back to the "To go in" queue. Separate from /transition because READY -> WAITING_FOR_OVEN
+ * is two steps on the status line and must happen as one.
+ */
+crewRouter.post('/orders/:id/requeue', (req, res) => {
+  res.json({ order: requeueOrder(idParam(req)) });
+});
+
+/** The mirror of /requeue, so an accidental "back to the oven" is one tap to walk back. */
+crewRouter.post('/orders/:id/ready', (req, res) => {
+  res.json({ order: readyOrder(idParam(req)) });
 });
 
 crewRouter.patch('/orders/:id/bake', (req, res) => {

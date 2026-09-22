@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { crewApi, serverNow } from '../api.ts';
 import { useLive } from '../live.tsx';
 import { useFocusCard, useFocusedOrderId } from '../useFocusOrder.ts';
-import { EmptyState, NoteBadge, SoundToggle, useBoardStale } from '../components.tsx';
+import { EmptyState, NoteBadge, PizzaEmoji, SoundToggle, useBoardStale } from '../components.tsx';
 import { useWakeLock } from '../useWakeLock.ts';
 import { useNow, elapsed } from '../useNow.ts';
 import { playPrepArrival } from '../alarm.ts';
@@ -13,8 +13,26 @@ export default function Prep() {
   useWakeLock();
   const now = useNow(1000);
   const stale = useBoardStale();
-  const { orders, mutateOrder } = useLive();
+  const { state, orders, mutateOrder } = useLive();
   const focusId = useFocusedOrderId();
+
+  /**
+   * What actually goes ON the pizza. This screen is the one place where somebody has their
+   * hands in the toppings, and the type NAME alone ("Grillgemüse") does not tell a helper
+   * who joined for one evening which four vegetables that means.
+   *
+   * Read live from the menu rather than snapshotted onto the order, so correcting a type's
+   * ingredients mid-evening fixes every pizza still waiting to be made. The name and emoji
+   * stay snapshotted on the order - those identify it, and must survive a deleted type.
+   */
+  const ingredientsById = useMemo(() => {
+    const m = new Map<number, string[]>();
+    for (const t of state?.pizzaTypes ?? []) m.set(t.id, t.ingredients);
+    return m;
+  }, [state?.pizzaTypes]);
+
+  const ingredientsOf = (o: Order) =>
+    (o.pizzaTypeId === null ? undefined : ingredientsById.get(o.pizzaTypeId)) ?? [];
 
   // Oldest first: whoever has been waiting longest gets made next, and a list that only
   // ever grows downwards means the top of the screen is stable to work from.
@@ -83,7 +101,14 @@ export default function Prep() {
       ) : (
         <div className={`olist${stale ? ' board-stale' : ''}`}>
           {list.map((o) => (
-            <PrepRow key={o.id} order={o} now={now} focusId={focusId} onToOven={() => toOven(o)} />
+            <PrepRow
+              key={o.id}
+              order={o}
+              now={now}
+              focusId={focusId}
+              ingredients={ingredientsOf(o)}
+              onToOven={() => toOven(o)}
+            />
           ))}
         </div>
       )}
@@ -96,11 +121,13 @@ function PrepRow({
   order,
   now,
   focusId,
+  ingredients,
   onToOven,
 }: {
   order: Order;
   now: number;
   focusId: number | null;
+  ingredients: string[];
   onToOven: () => void;
 }) {
   const { pending } = useLive();
@@ -117,9 +144,7 @@ function PrepRow({
         borderColor: p?.failed ? 'var(--warn)' : undefined,
       }}
     >
-      <span className="orow-emoji" aria-hidden="true">
-        {order.pizzaTypeEmoji}
-      </span>
+      <PizzaEmoji emoji={order.pizzaTypeEmoji} />
       <span className="orow-no">#{order.id}</span>
       <div className="orow-main">
         <div className="orow-name">{order.customerName}</div>
@@ -127,6 +152,13 @@ function PrepRow({
           {order.pizzaTypeName} · waiting {elapsed(order.paidAt ?? order.createdAt, now)}
           {p?.failed ? ' · NOT SAVED' : ''}
         </div>
+        {ingredients.length > 0 ? (
+          <ul className="ings">
+            {ingredients.map((ing) => (
+              <li key={ing}>{ing}</li>
+            ))}
+          </ul>
+        ) : null}
         <NoteBadge note={order.note} />
       </div>
       <div className="orow-actions">

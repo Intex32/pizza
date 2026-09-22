@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { ApiError, crewApi, serverNow } from '../api.ts';
-import { Modal, StatusChip } from '../components.tsx';
+import { Modal, PizzaEmoji, StatusChip } from '../components.tsx';
 import { useLive } from '../live.tsx';
 import { scanOutcome, whereIs } from '../scan.ts';
 import type { ScanOutcome } from '../scan.ts';
@@ -237,9 +237,7 @@ export function FindOrderModal({ onClose }: { onClose: () => void }) {
           <div className="olist" style={{ marginTop: 8 }}>
             {result.orders.map((o) => (
               <button key={o.id} type="button" className="orow" onClick={() => act(o)}>
-                <span className="orow-emoji" aria-hidden="true">
-                  {o.pizzaTypeEmoji}
-                </span>
+                <PizzaEmoji emoji={o.pizzaTypeEmoji} />
                 <span className="orow-no">#{o.id}</span>
                 <div className="orow-main">
                   <div className="orow-name">{o.customerName}</div>

@@ -754,10 +754,27 @@ body:has(.kiosk) {
   border: 1px solid var(--border);
   flex-wrap: wrap;
 }
+/* A fixed box, NOT an intrinsically sized one: a two-glyph pizza type used to be wider than
+   a one-glyph type and shunted the number and the name of that row to the right. The glyphs
+   step down a size so they fit the same box instead of the box growing to fit them. */
 .orow-emoji {
   font-size: 2.3rem;
   line-height: 1;
   flex: none;
+  width: 4.2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  white-space: nowrap;
+}
+/* Sized so the glyphs FIT the box rather than spilling over its edges - measured, not
+   guessed: a colour emoji renders about 1.25x its font-size wide. */
+.orow-emoji[data-glyphs='2'] {
+  font-size: 1.5rem;
+}
+.orow-emoji[data-glyphs='3'] {
+  font-size: 1rem;
 }
 .orow-no {
   font-weight: 800;
@@ -805,7 +822,12 @@ body:has(.kiosk) {
   justify-content: center;
   text-align: center;
   min-height: 160px;
-  padding: 16px;
+  /* The bottom band is RESERVED for the floating "↩ oven" button (40px tall, 8px from the
+     edge). Without it the button sits on top of whatever the centred text happens to reach -
+     the number, the "ready 2:29" line, or a long type name like "Quattro Formaggi". Padding
+     makes that structural instead of a coincidence of how long the words are. Reset to 16px
+     below 760px, where the button leaves the overlay and becomes its own row. */
+  padding: 16px 16px 52px;
   border-radius: var(--radius);
   background: linear-gradient(160deg, #065f46, #047857);
   border: 1px solid #10b981;
@@ -821,6 +843,62 @@ body:has(.kiosk) {
 .ready-card.very-cold {
   background: linear-gradient(160deg, #7f1d1d, #991b1b);
   border-color: #ef4444;
+}
+/* Emoji + number as one centred unit, mirroring .pcard-head on the oven screen.
+   The card is centred rather than listed, so this needs no fixed-width cell the way the
+   board rows do - but the glyphs still step down so a two-emoji type does not crowd the
+   "↩ oven" button sitting in the top-right corner of the same card. */
+.ready-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  max-width: 100%;
+}
+.ready-emoji {
+  font-size: 2.4rem;
+  line-height: 1;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+}
+.ready-emoji[data-glyphs='2'] {
+  font-size: 1.65rem;
+}
+.ready-emoji[data-glyphs='3'] {
+  font-size: 1.15rem;
+}
+/**
+ * The grid item, which is NOT the same box as the card.
+ *
+ * A grid row is as tall as its tallest item, so this wrapper gets stretched - but the card
+ * button inside it only grew to fit its own text. A one-line name next to a two-line name
+ * left the card short of the bottom of its own cell, and the "↩ oven" button, which is
+ * positioned against the CELL, floated in the gap below the card entirely.
+ * Flex column with the card on flex:1 makes the card fill the cell it was given.
+ */
+.ready-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.ready-cell > .ready-card {
+  flex: 1;
+}
+
+/* BOTTOM-right, not top-right.
+   In the top corner it sat on top of the number: at two columns on a phone a card is about
+   170px wide, and a 73px button plus a centred 2.6rem number do not both fit on that line -
+   they were overlapping by ~30px before this screen had emoji at all, and by ~64px with
+   them. The bottom corner is empty on every card, and it also puts the one destructive
+   control furthest from where a thumb lands on the name. */
+.ready-back {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
 }
 .ready-no {
   font-size: 2.6rem;
@@ -940,6 +1018,22 @@ table.data td.wrap-cell {
   font-size: 1.05rem;
   font-weight: 750;
   letter-spacing: 0.01em;
+}
+/* MOVE TO PREP / MOVE TO OVEN were solid --ok, which on a board of forty rows is forty
+   slabs of the brightest colour in the palette pulling the eye off the names and notes that
+   are the actual content. Knocked back towards the surface, but still FILLED: this is the
+   one thing on the row anybody presses, and an outlined button on a dark board reads as
+   secondary and is slower to aim at with an oven mitt on.
+   Measured: luminance 0.50 -> 0.29, contrast against the row 9.0:1 -> 5.7:1, and the dark
+   ink on it stays at 5.1:1, above the 4.5:1 floor. Drop the 75% to dim it further.
+   Needs the .kiosk prefix to outrank the .kiosk .btn-ok fill it replaces. */
+.kiosk .btn-ok.btn-advance {
+  background: color-mix(in srgb, var(--ok) 75%, var(--surface-2));
+  border-color: color-mix(in srgb, var(--ok) 75%, var(--surface-2));
+}
+.kiosk .btn-ok.btn-advance:active {
+  background: var(--ok);
+  border-color: var(--ok);
 }
 
 /* --- Payment breakdown (admin) ---------------------------------------------- */
@@ -1073,6 +1167,19 @@ table.data td.wrap-cell {
   .ready-grid {
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   }
+  /* Two columns on a phone makes a card about 170px wide, and at that width an overlaid
+     button covers whatever is centred beneath it - the number in the top corner, the
+     "ready 2:29" line in the bottom one. So below this width it stops floating and becomes
+     an ordinary full-width row under the card, where it cannot collide with anything. */
+  .ready-back {
+    position: static;
+    width: 100%;
+    margin-top: 6px;
+  }
+  /* No floating button here, so no band to keep clear of it. */
+  .ready-card {
+    padding-bottom: 16px;
+  }
 
   /* The action buttons get their own full-width row instead of being crushed
      against the name. */
@@ -1101,6 +1208,13 @@ table.data td.wrap-cell {
 @media (max-width: 420px) {
   .orow-emoji {
     font-size: 1.9rem;
+    width: 3.4rem;
+  }
+  .orow-emoji[data-glyphs='2'] {
+    font-size: 1.2rem;
+  }
+  .orow-emoji[data-glyphs='3'] {
+    font-size: 0.8rem;
   }
   .orow-name {
     font-size: 1.25rem;
@@ -1189,4 +1303,33 @@ table.data td.wrap-cell {
   border: 3px solid var(--accent);
   border-radius: var(--radius-sm);
   box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.35);
+}
+
+/* --- Ingredients (prep screen) ------------------------------------------- */
+/* Chips rather than a comma list: a helper who has never made this pizza before is scanning
+   for "what do I put on it", and four separate blocks are countable at a glance in a way a
+   run-on sentence is not. */
+.ings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+/* Only where a note directly follows the chips. .note carries no margin of its own and is
+   used on the customer pages and the oven cards too, so this stays an adjacency rule rather
+   than a change to .note itself. */
+.ings + .note {
+  margin-top: 8px;
+}
+.ings li {
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.2;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  color: var(--text);
 }

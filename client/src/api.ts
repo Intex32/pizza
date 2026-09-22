@@ -177,6 +177,12 @@ export const crewApi = {
    *  Both null means the Unplaced tray. */
   place: (id: number, ovenLayerId: number | null, ovenSlot: number | null) =>
     api.post<{ order: Order }>(`/api/crew/orders/${id}/place`, { ovenLayerId, ovenSlot }),
+
+  /** Back to the "To go in" queue from READY or BAKING, in one step, timer discarded. */
+  requeue: (id: number) => api.post<{ order: Order }>(`/api/crew/orders/${id}/requeue`, {}),
+
+  /** Undo of requeue: back onto the ready board from the queue or the oven, in one step. */
+  ready: (id: number) => api.post<{ order: Order }>(`/api/crew/orders/${id}/ready`, {}),
   setBake: (id: number, bakeSeconds: number) =>
     api.patch<{ order: Order }>(`/api/crew/orders/${id}/bake`, { bakeSeconds }),
   edit: (id: number, body: { customerName?: string; pizzaTypeId?: number; note?: string }) =>

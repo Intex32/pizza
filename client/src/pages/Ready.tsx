@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { crewApi, serverNow } from '../api.ts';
 import { useLive } from '../live.tsx';
 import { useFocusCard, useFocusedOrderId } from '../useFocusOrder.ts';
-import { EmptyState, useBoardStale } from '../components.tsx';
+import { EmptyState, PizzaEmoji, useBoardStale } from '../components.tsx';
 import { useWakeLock } from '../useWakeLock.ts';
 import { elapsed, useNow } from '../useNow.ts';
 import { STATUS } from '../../../shared/status.ts';
@@ -60,17 +60,42 @@ export default function Ready() {
   /**
    * Raw in the middle. The most common backward move at a real pizza night.
    *
-   * It goes back to the Unplaced tray rather than its old slot: leaving the oven freed that
-   * slot, and something else may well be in it by now. The oven crew give it a real slot on
-   * the oven screen. Within two minutes the server resumes the original countdown, so an
-   * accidental tap costs nothing.
+   * It lands in "To go in", NOT in the Unplaced tray. Unplaced means "baking, but nobody
+   * recorded where" - and this pizza is not baking, it is in somebody's hand on the way
+   * back to the oven. Somebody has to physically slide it in and say which slot, and the
+   * queue is the state that says exactly that. It is the same reasoning as the undo of
+   * "mark ready" on the oven screen, which lands in the same place.
+   *
+   * The consequence is that the bake timer is discarded rather than resumed. That is right
+   * for this button: a pizza that came out raw is going back in for a fresh amount of time
+   * that the oven crew choose, not for the remainder of a countdown that already expired.
    */
   const backToOven = (o: Order) => {
     void mutateOrder({
       id: o.id,
-      patch: { status: STATUS.BAKING, ovenLayerId: null, ovenSlot: null },
-      request: () => crewApi.place(o.id, null, null).then((r) => r.order),
-      alreadyDone: (x) => x.status === STATUS.BAKING,
+      patch: {
+        status: STATUS.WAITING_FOR_OVEN,
+        ovenLayerId: null,
+        ovenSlot: null,
+        bakingStartedAt: null,
+        bakeSeconds: null,
+      },
+      request: () => crewApi.requeue(o.id).then((r) => r.order),
+      alreadyDone: (x) => x.status === STATUS.WAITING_FOR_OVEN,
+      undo: {
+        text: `#${o.id} ${o.customerName} → back in the oven`,
+        label: 'Undo',
+        /**
+         * This button sits on a card whose whole job is to be tapped, so a thumb that lands
+         * a little low sends a collected pizza back to the queue - with the guest standing
+         * right there. One tap puts it back on the board.
+         *
+         * The "ready N minutes ago" clock restarts: requeue cleared ready_at and nothing
+         * remembers the old value. Worth it against a mis-tap that could otherwise only be
+         * walked back by re-baking the pizza.
+         */
+        run: () => crewApi.ready(o.id).then((r) => r.order),
+      },
     });
   };
 
@@ -143,23 +168,28 @@ function ReadyCard({
   const { ref, focused } = useFocusCard<HTMLDivElement>(order.id, focusId);
 
   return (
-    <div ref={ref} style={{ position: 'relative', opacity: p && !p.failed ? 0.6 : 1 }}>
+    <div ref={ref} className="ready-cell" style={{ opacity: p && !p.failed ? 0.6 : 1 }}>
       <button
         type="button"
         className={`ready-card${tone}${focused ? ' focused' : ''}`}
         onClick={onCollect}
         disabled={Boolean(p && !p.failed)}
       >
-        <span className="ready-no">#{order.id}</span>
+        {/* Emoji beside the number, the same pairing the oven screen uses - whoever is
+            handing pizzas out is matching what is in their hand against the board, and the
+            picture is quicker to match than the type name underneath. */}
+        <span className="ready-head">
+          <PizzaEmoji emoji={order.pizzaTypeEmoji} className="ready-emoji" />
+          <span className="ready-no">#{order.id}</span>
+        </span>
         <span className="ready-name">{order.customerName}</span>
         <span className="ready-sub">{order.pizzaTypeName}</span>
         <span className="ready-sub">ready {elapsed(order.readyAt, now)}</span>
       </button>
       <button
         type="button"
-        className="btn btn-sm btn-ghost"
-        style={{ position: 'absolute', top: 8, right: 8 }}
-        title="Raw in the middle - put it back in the oven"
+        className="btn btn-sm btn-ghost ready-back"
+        title="Raw in the middle - send it back to the oven queue"
         onClick={(e) => {
           e.stopPropagation();
           onBack();

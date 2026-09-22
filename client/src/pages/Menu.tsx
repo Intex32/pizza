@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { crewApi } from '../api.ts';
 import { useLive } from '../live.tsx';
-import { Modal } from '../components.tsx';
+import { Modal, PizzaEmoji } from '../components.tsx';
 import { mmss } from '../useNow.ts';
 import { DEFAULT_PIZZA_EMOJI } from '../../../shared/payment.ts';
 import type { PizzaType } from '../../../shared/types.ts';
@@ -58,9 +58,7 @@ export default function Menu() {
           <div className="stack">
             {retired.map((t) => (
               <div key={t.id} className="orow" style={{ opacity: 0.75 }}>
-                <span className="orow-emoji" aria-hidden="true">
-                  {t.emoji}
-                </span>
+                <PizzaEmoji emoji={t.emoji} />
                 <div className="orow-main">
                   <div className="orow-name" style={{ fontSize: '1.1rem' }}>
                     {t.name}

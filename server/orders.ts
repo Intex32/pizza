@@ -379,6 +379,97 @@ export function placeOrder(
   });
 }
 
+/**
+ * Send a pizza back to the "To go in" queue, from READY or from BAKING.
+ *
+ * READY -> WAITING_FOR_OVEN is TWO steps on the status line, and canTransition() deliberately
+ * only ever allows one. Doing it as two client calls would leave the pizza sitting in the
+ * Unplaced tray if the second one failed - visibly in the oven, when it is in fact in
+ * somebody's hand. One statement in one transaction has no such middle state.
+ *
+ * The timer is destroyed on the way out, exactly as the BAKING -> WAITING_FOR_OVEN step does:
+ * this pizza is out of the oven and on a counter, so whatever the old countdown said about
+ * when it would be done is now a lie. It gets a fresh bake when someone places it again.
+ */
+export function requeueOrder(id: number): Order {
+  return mutate(() => {
+    const now = Date.now();
+    const result = db
+      .prepare(`
+        UPDATE orders SET
+          status            = 'WAITING_FOR_OVEN',
+          oven_layer_id     = NULL,
+          oven_slot         = NULL,
+          baking_started_at = NULL,
+          bake_seconds      = NULL,
+          ready_at          = NULL,
+          updated_at        = :now
+        WHERE id = :id
+          AND cancelled_at IS NULL
+          AND status IN ('READY', 'BAKING')
+      `)
+      .run({ id, now });
+
+    const order = requireOrder(id);
+    if (Number(result.changes) === 0) {
+      if (order.cancelledAt !== null) {
+        throw staleConflict('order_cancelled', 'That order was cancelled.', order);
+      }
+      throw staleConflict(
+        'not_requeueable',
+        'That pizza is not in the oven or on the ready board.',
+        order,
+      );
+    }
+    log(`REQUEUE #${id} -> WAITING_FOR_OVEN`);
+    return order;
+  });
+}
+
+/**
+ * Straight onto the ready board, from the queue or from the oven. The mirror of
+ * requeueOrder(), and it exists for exactly one reason: to undo it.
+ *
+ * WAITING_FOR_OVEN -> READY skips BAKING, which the one-step-at-a-time rule in
+ * canTransition() forbids on purpose. That rule is about the FORWARD path, where skipping
+ * the oven would mean handing someone raw dough. Undoing a mis-tap is the other direction:
+ * the pizza never moved, only the record of it did, and the record has to be able to move
+ * back in one go for the same reason requeue does - two calls means a visible wrong state
+ * in the middle if the second one fails.
+ */
+export function readyOrder(id: number): Order {
+  return mutate(() => {
+    const now = Date.now();
+    const result = db
+      .prepare(`
+        UPDATE orders SET
+          status        = 'READY',
+          oven_layer_id = NULL,
+          oven_slot     = NULL,
+          ready_at      = COALESCE(ready_at, :now),
+          updated_at    = :now
+        WHERE id = :id
+          AND cancelled_at IS NULL
+          AND status IN ('WAITING_FOR_OVEN', 'BAKING')
+      `)
+      .run({ id, now });
+
+    const order = requireOrder(id);
+    if (Number(result.changes) === 0) {
+      if (order.cancelledAt !== null) {
+        throw staleConflict('order_cancelled', 'That order was cancelled.', order);
+      }
+      throw staleConflict(
+        'not_readyable',
+        'That pizza is not in the oven queue.',
+        order,
+      );
+    }
+    log(`READY #${id} (undo of requeue)`);
+    return order;
+  });
+}
+
 /** Absolute, never relative: a "+30" sent twice by a flaky tap would silently add a minute. */
 export function setBakeSeconds(id: number, bakeSeconds: number): Order {
   const value = clamp(bakeSeconds, 30, 3600);

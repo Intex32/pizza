@@ -3,7 +3,8 @@ import { Link } from 'react-router';
 import { crewApi, serverNow } from '../api.ts';
 import { useLive } from '../live.tsx';
 import { useFocusCard, useFocusedOrderId } from '../useFocusOrder.ts';
-import { EmptyState, Modal, NoteBadge } from '../components.tsx';
+import { FindOrderModal } from './FindOrder.tsx';
+import { EmptyState, Modal, NoteBadge, PizzaEmoji } from '../components.tsx';
 import { STATUS } from '../../../shared/status.ts';
 import {
   PAYMENT_EMOJI,
@@ -30,6 +31,7 @@ export default function Ordered() {
   const [query, setQuery] = useState('');
   const focusId = useFocusedOrderId();
   const [walkIn, setWalkIn] = useState(false);
+  const [finding, setFinding] = useState(false);
   const [payFor, setPayFor] = useState<Order | null>(null);
   const [noShowFor, setNoShowFor] = useState<Order | null>(null);
 
@@ -112,6 +114,18 @@ export default function Ordered() {
   return (
     <div className="maxw">
       <div className="row wrap" style={{ marginBottom: 12 }}>
+        {/* The same sheet the top bar's Find opens, put where the work actually happens.
+            This is the screen somebody stands on at the counter all evening, and scanning a
+            guest's QR is faster and more certain than reading a name off a phone and typing
+            it. The bar keeps its own Find so the other screens still reach it. */}
+        <button
+          type="button"
+          className="btn"
+          title="Find an order by QR or pickup code"
+          onClick={() => setFinding(true)}
+        >
+          📷 Scan QR
+        </button>
         {/* Deliberately NOT autoFocus. This fires on screen mount, and on a phone or a
             counter tablet that throws the on-screen keyboard up over the very list the
             crew opened the screen to read - before anyone has asked to search anything.
@@ -208,6 +222,8 @@ export default function Ordered() {
         </Modal>
       ) : null}
 
+      {finding ? <FindOrderModal onClose={() => setFinding(false)} /> : null}
+
       {walkIn ? (
         <WalkInSheet
           onClose={() => setWalkIn(false)}
@@ -293,9 +309,7 @@ function OrderRow({
         borderColor: p?.failed ? 'var(--warn)' : undefined,
       }}
     >
-      <span className="orow-emoji" aria-hidden="true">
-        {order.pizzaTypeEmoji}
-      </span>
+      <PizzaEmoji emoji={order.pizzaTypeEmoji} />
       <span className="orow-no">#{order.id}</span>
       <div className="orow-main">
         <div className="orow-name">{order.customerName}</div>

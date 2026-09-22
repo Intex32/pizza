@@ -161,7 +161,6 @@ export default function Oven() {
 
   const markReady = (order: Order) => {
     setConfirmReady(null);
-    const from = zoneOf(order);
     void mutateOrder({
       id: order.id,
       patch: { status: STATUS.READY, ovenLayerId: null, ovenSlot: null, readyAt: serverNow() },
@@ -171,16 +170,16 @@ export default function Oven() {
       undo: {
         text: `#${order.id} ${order.customerName} is ready`,
         label: 'Undo',
-        // Puts it back in the slot it came out of, and within two minutes the server
-        // resumes the original countdown rather than starting a fresh bake.
-        run: () =>
-          crewApi
-            .place(
-              order.id,
-              from.kind === 'unplaced' ? null : from.layerId,
-              from.kind === 'unplaced' ? null : from.slot,
-            )
-            .then((r) => r.order),
+        /**
+         * Back to "To go in", NOT back into the slot it came out of.
+         *
+         * Marking a pizza ready is what somebody taps as they pull it out with a peel, so by
+         * the time the undo is tapped the pizza is physically on a counter. Restoring the
+         * slot claimed a pizza was baking in a space that is empty, or worse, that another
+         * pizza has since been slid into. The queue is the one state that matches the room:
+         * it is out, and a human has to put it back in and say where.
+         */
+        run: () => crewApi.requeue(order.id).then((r) => r.order),
       },
     });
   };

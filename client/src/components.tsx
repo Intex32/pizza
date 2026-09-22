@@ -16,6 +16,31 @@ import type { Status } from '../../shared/status.ts';
 import { PAYMENT_EMOJI, PAYMENT_LABEL } from '../../shared/payment.ts';
 import type { PaymentMethod } from '../../shared/payment.ts';
 import type { Order } from '../../shared/types.ts';
+import { glyphBucket } from './glyphs.ts';
+
+// --- Pizza emoji ---------------------------------------------------------------------------
+
+/**
+ * A pizza's emoji in a FIXED-WIDTH cell, so every row in a list starts its name at the same x.
+ *
+ * A menu that mixes 🍕 with 🍕🌿 was pushing the number and the name of that row sideways by
+ * the width of a second glyph, which down a long board reads as a wobbling left edge. The
+ * cell is a constant width and the glyphs step down a size to fit inside it, rather than the
+ * cell growing to fit them. See glyphs.ts for why counting them is not as simple as .length.
+ */
+export function PizzaEmoji({
+  emoji,
+  className = 'orow-emoji',
+}: {
+  emoji: string;
+  className?: string;
+}) {
+  return (
+    <span className={className} data-glyphs={glyphBucket(emoji)} aria-hidden="true">
+      {emoji}
+    </span>
+  );
+}
 
 // --- Status chip ---------------------------------------------------------------------------
 
