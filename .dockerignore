@@ -1,0 +1,20 @@
+# Keep the build context small and, more importantly, keep secrets and live data out of it.
+
+node_modules
+client/dist
+
+# The live database, backups and the deleted-orders log. These belong in a mounted volume,
+# never baked into an image - an image carrying a copy of last night's orders would quietly
+# resurrect them on the next deploy.
+data
+
+# The crew password. Passed in as an environment variable instead.
+.env
+
+.git
+.gitignore
+.claude
+README.md
+Dockerfile
+.dockerignore
+compose.yaml

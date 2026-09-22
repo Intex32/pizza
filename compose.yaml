@@ -1,0 +1,35 @@
+services:
+  pizza:
+    image: pizza-night
+    pull_policy: never
+    restart: unless-stopped
+
+    ports:
+      - '3001:3001'
+
+    environment:
+      # Set this in a .env file next to this compose file, or export it before `up`.
+      # It is NOT baked into the image.
+      CREW_PASSWORD: ${CREW_PASSWORD:?set CREW_PASSWORD, minimum 8 characters}
+      PORT: '3001'
+      # Only if you put the app behind https. A Secure cookie over plain http is silently
+      # dropped by the browser and nothing will log in.
+      # PUBLIC_ORIGIN: https://pizza.example.com
+
+    volumes:
+      # THE IMPORTANT LINE. The database, the backups and the deleted-orders log all live
+      # here. Without it, replacing the container destroys the evening's orders.
+      #
+      # A bind mount rather than a named volume so you can copy backups straight off the Pi
+      # with scp. It must be on the Pi's own disk - SQLite in WAL mode needs real file
+      # locking, and an NFS or SMB mount will fail or corrupt rather than merely be slow.
+      - ./data:/app/data
+
+    # Runs as uid 1000, which is the default user on Raspberry Pi OS, so ./data on the host
+    # is writable without extra steps. If your user is a different uid, either change this
+    # or run: sudo chown -R 1000:1000 ./data
+    user: '1000:1000'
+
+    # Without an init process Node runs as PID 1 and ignores SIGTERM, so `docker stop` waits
+    # ten seconds and then kills it. This makes shutdown immediate and clean.
+    init: true

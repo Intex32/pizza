@@ -3,3 +3,7 @@ client/dist/
 data/*
 !data/.gitkeep
 .env
+
+# Image tarball from `docker save` when deploying to the Pi
+pizza-night-*.tar
+pizza-night-*.tar.gz

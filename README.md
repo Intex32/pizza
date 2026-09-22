@@ -284,18 +284,128 @@ halfway through service.
 
 ---
 
+## Building the client
+
+```bash
+npm run build
+```
+
+That type-checks and writes `client/dist/` — one HTML file, one JS bundle, one CSS bundle,
+about 400 KB. `npm run serve` does this for you before starting, so during normal use you
+never need to run it by hand; you only need it on its own when you are preparing files to
+copy to the Pi.
+
+`client/dist/` is gitignored — it is a build output, so rebuild it rather than committing it.
+
+---
+
 ## Running it on a Raspberry Pi
 
 Needs **Node 24 or newer** — the app runs TypeScript directly and uses Node's built-in SQLite,
 so there is nothing to compile and no native module to build for ARM. NodeSource ships arm64
 builds; Raspberry Pi OS's own `nodejs` package is usually far too old.
-Build on your laptop, then copy `server/`, `shared/`, `client/dist/`, `package.json`,
-`package-lock.json` and `.env` across:
+
+**⚠️ The two blocks below run on different machines.** `npm ci --omit=dev` installs express
+and nothing else — run it on your laptop by mistake and it deletes TypeScript, Vite and React,
+and `npm run build` stops working until you `npm install` again.
+
+**1. On your laptop**, build the client:
 
 ```bash
-npm ci --omit=dev     # installs express and nothing else
+npm run build
+```
+
+Then copy `server/`, `shared/`, `client/dist/`, `package.json`, `package-lock.json` and `.env`
+to the Pi.
+
+**2. On the Pi**, install just the runtime dependency and start it:
+
+```bash
+npm ci --omit=dev
 node server/index.ts
 ```
 
-Do **not** run `npm run serve` there — that rebuilds the client, and the build tools are not
-installed by `--omit=dev`.
+Do **not** run `npm run serve` on the Pi — it would try to rebuild the client, and the build
+tools are deliberately not installed there.
+
+## Running it in Docker
+
+A good fit: one runtime dependency (express) and Node's built-in SQLite, so there is no
+native module to compile for ARM and the same image runs on a laptop and a Pi.
+
+```bash
+echo "CREW_PASSWORD=your-password-here" > .env
+docker compose up -d --build
+```
+
+That is it — `http://<pi-ip>:3001`. The client is built *inside* the image, so there is no
+way to accidentally ship a stale or missing bundle.
+
+### The one thing you must not get wrong
+
+**The `./data` volume in `compose.yaml` is what keeps your orders.** The database, the
+backups and the deleted-orders log all live there. Take that line out and replacing the
+container — any `--build`, any image update — destroys the evening.
+
+Two related constraints:
+
+- **It must be on the Pi's own disk.** SQLite in WAL mode needs real file locking; an NFS or
+  SMB mount does not merely run slowly, it fails or corrupts.
+- **It must be writable by uid 1000.** That is the default user on Raspberry Pi OS so it
+  usually just works; if your user is a different uid, `sudo chown -R 1000:1000 ./data`.
+
+Backups land in `./data/backups/` on the host, so `scp` gets them off the Pi — or use the
+download links on the admin screen.
+
+### Which machine builds the image?
+
+Your laptop is x86_64 and the Pi is arm64, so **a plain `docker build` on the laptop produces
+an image the Pi cannot run.** Two ways round it:
+
+**Build on the Pi** (simplest — just run the two commands above there).
+
+**Or cross-build on the laptop** and copy the image over, which keeps the Pi's SD card free of
+build tooling. On the laptop:
+
+```bash
+docker buildx build --platform linux/arm64 -t pizza-night:arm64 --load .
+docker image inspect pizza-night:arm64 --format '{{.Architecture}}'   # must print: arm64
+docker save pizza-night:arm64 -o pizza-night-arm64.tar
+scp pizza-night-arm64.tar pi@raspberrypi.local:~
+```
+
+Check that architecture line before copying. `buildx` with `--platform` is what makes it
+arm64; a plain `docker build` silently produces an amd64 image that the Pi refuses to run,
+and it is better to find that out in a second than after uploading 78 MB.
+
+Then on the Pi:
+
+```bash
+docker load < pizza-night-arm64.tar
+mkdir -p ~/pizza-data
+docker run -d --name pizza --init --restart unless-stopped \
+  -p 3001:3001 -e CREW_PASSWORD=your-password-here \
+  -v "$HOME/pizza-data:/app/data" -u 1000:1000 pizza-night:arm64
+```
+
+The cross-build is emulated so it is slower than a native one, but nothing in this project
+compiles — it is only JavaScript being copied around — so it takes about a minute.
+
+Two details worth knowing:
+
+- **Do not gzip the tarball.** `docker save` already emits compressed layers, so gzipping
+  takes 78.3 MB down to 77.7 MB — not worth the step.
+- **On Windows use `docker save -o file.tar`, never `docker save | ...`.** Piping binary
+  through the PowerShell pipeline corrupts it.
+
+### Day-to-day
+
+```bash
+docker compose logs -f          # every status change, one line each
+docker compose restart          # timers are stored as timestamps, so nothing is lost
+docker compose up -d --build    # after changing the code
+```
+
+Restarting mid-event is safe: bake timers are anchored to stored timestamps rather than to
+anything held in memory.
+
