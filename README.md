@@ -88,9 +88,11 @@ is literally `undefined` there. That has two consequences:
 - **No offline mode.** This is the right outcome anyway. Every screen here is a live view of
   one database; a cached shell showing last night's orders and a frozen oven timer would be
   worse than a screen that honestly says it is not live.
-- **Android will not show a true install prompt**, since Chrome requires https plus a service
-  worker before it offers one. "Add to Home screen" still works, it is just a shortcut. iOS
-  has no such requirement, which is why iPads get the full-screen treatment regardless.
+- **Over plain http, Android will not show a true install prompt.** Chrome dropped the
+  service-worker requirement back in version 108, so **https is the only thing standing in the
+  way** — the manifest here already satisfies everything else. Serve over https and Android
+  offers a real install. iOS never had that requirement, which is why iPads get the full-screen
+  treatment either way.
 
 If you ever put the app behind https with a certificate the devices trust, Android installs
 properly too — and nothing here needs changing for that.
@@ -112,8 +114,11 @@ Wi-Fi. There is nothing to install and no account anywhere.
    very first time on a given phone it will say you are logged in somewhere else — log in once
    there and every scan after that goes straight through. The camera app opens links in the
    phone's *default* browser, so log in on that one.
-2. **🔎 Find** in the top bar, then type the five characters. Faster than scanning, works when
-   their battery is dead, and never leaves the app.
+2. **🔎 Find** in the top bar. The camera opens **by itself** and the order comes up as soon
+   as it reads the code — one tap, and you never leave the app. The pickup-code field stays
+   right underneath it, so you can type instead at any moment without turning anything off.
+3. **🔎 Find**, then type the five characters. Faster than either, works when their battery is
+   dead, and is the fallback whenever a camera will not cooperate.
 
 Either way the app jumps to whichever screen that pizza is on and outlines it. **It never
 changes anything** — you still tap the button yourself. If the pizza is somewhere no board
@@ -127,10 +132,26 @@ The pickup code has no `O`, `I`, `0` or `1` in it, because those are the ones pe
 reading a code off a phone screen. Case and hyphens do not matter. In the rare event two
 orders share a code, it shows you both by name rather than guessing.
 
-**There is no in-app camera scanner, on purpose.** Browsers only give a web page the camera
-over https, and this runs on a plain LAN address — so an in-page scanner would be a button
-that could never work. The phone's own camera app has no such restriction, which is why it is
-the recommended route. The Find sheet says this rather than showing a dead button.
+**The in-app scanner needs https, and simply hides itself without it.** Browsers only hand a
+web page the camera in a "secure context" — over https, or on `localhost`. On a plain
+`http://192.168.x.x` address `navigator.mediaDevices` is not blocked, it is *undefined*, so
+the app feature-detects and shows the camera-app instructions instead of a button that could
+never work. Three ways to have it:
+
+- **Serve over https** (a real certificate and a hostname). Everything switches on by itself,
+  on iOS as well as Android — no flag, no per-device setup.
+- **Chrome only, one device:** paste the origin into
+  `chrome://flags/#unsafely-treat-insecure-origin-as-secure`, including the port. Safari has
+  no equivalent.
+- **Do nothing** and use the phone's own camera app, which has never had this restriction.
+
+The decoder is [jsQR](https://github.com/cozmo/jsQR), bundled into the client — not the native
+`BarcodeDetector`, which is missing on Windows and desktop Linux Chrome and would have left
+the decode path impossible to test.
+
+The camera is released the moment the sheet closes, the scan succeeds, or the component
+unmounts. A `MediaStream` outlives the code that created it, and a forgotten one leaves the
+camera light on after the crew member has walked away.
 
 **No Apple or Google Wallet passes.** A `.pkpass` must be signed with a certificate from a paid
 Apple Developer account or iOS refuses to open it at all, and Google Wallet needs a Google
@@ -334,7 +355,8 @@ Pizza types and oven layers survive a purge, so you are ready for next time.
   the thing that gets squeezed. 🍕 and **🔎 Find** stay put at every width. Nothing is ever
   parked off the right-hand edge where you cannot see it.
 - **Tablets:** set the screen timeout to Never. The app asks to keep the screen awake, but
-  browsers only allow that over https, which a plain LAN address is not.
+  that is another secure-context feature — over plain http it silently does nothing, and over
+  https it works on its own.
 - **One tab per device.** Nothing breaks with more, it is just wasted polling.
 - **The QR contains the guest's order link, which is the key to their order.** Anyone who
   photographs it could cancel that order while it is still unpaid — so the page no longer

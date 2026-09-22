@@ -21,6 +21,20 @@
   --danger-ink: #2c0b0b;
   --info: #818cf8;
 
+  /* THE TINTED BACKGROUNDS. These MUST be redeclared here.
+     .kiosk forces a dark surface whatever the device theme is, and it overrides --text to
+     near-white to match. The *-soft tokens were left inheriting from :root, which is only
+     dark when the DEVICE is in dark mode - so on a phone set to light, every banner rendered
+     as near-white text on a pale pink/amber background at about 1.05:1 contrast, and the
+     note badges and status chips washed out with it. Invisible on a light-mode phone,
+     perfect on a dark-mode laptop, which is exactly why it survived so long.
+     Anything added to :root with a -soft suffix needs a partner here. */
+  --accent-soft: #3a2413;
+  --ok-soft: #123026;
+  --warn-soft: #33260c;
+  --danger-soft: #3a1717;
+  --info-soft: #1e2142;
+
   color-scheme: dark;
   background: var(--bg);
   color: var(--text);
@@ -1138,4 +1152,37 @@ table.data td.wrap-cell {
   text-align: left;
   font: inherit;
   cursor: pointer;
+}
+
+/* --- In-page QR scanner ------------------------------------------------------------------
+   Only ever mounted where the browser will hand the page a camera (https, localhost, or a
+   Chrome insecure-origin exception). */
+.scanner {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  /* Shares the sheet with the pickup-code field now that it opens automatically, so it gets
+     less height than it did as a full-sheet takeover. */
+  max-height: 38vh;
+  margin-bottom: 10px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: #000;
+}
+.scanner-video {
+  width: 100%;
+  height: 100%;
+  /* cover, so a 16:9 camera fills the square box instead of letterboxing into a strip that
+     is too small to aim with. */
+  object-fit: cover;
+  display: block;
+}
+/* The aiming box. Purely a target for the human - the decoder reads the whole frame, so a
+   code slightly outside it still scans rather than being mysteriously ignored. */
+.scanner-frame {
+  position: absolute;
+  inset: 14%;
+  border: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.35);
 }
