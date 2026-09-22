@@ -4,7 +4,14 @@ import { crewApi, serverNow } from '../api.ts';
 import { useLive } from '../live.tsx';
 import { EmptyState, Modal, NoteBadge } from '../components.tsx';
 import { STATUS } from '../../../shared/status.ts';
-import type { Order } from '../../../shared/types.ts';
+import {
+  PAYMENT_EMOJI,
+  PAYMENT_HINT,
+  PAYMENT_LABEL,
+  PAYMENT_METHODS,
+} from '../../../shared/payment.ts';
+import type { PaymentMethod } from '../../../shared/payment.ts';
+import type { Order, PizzaType } from '../../../shared/types.ts';
 
 export function whenLabel(ts: number): string {
   const d = new Date(ts);
@@ -21,6 +28,8 @@ export default function Ordered() {
   const { orders, state, mutateOrder, run, pushToast } = useLive();
   const [query, setQuery] = useState('');
   const [walkIn, setWalkIn] = useState(false);
+  const [payFor, setPayFor] = useState<Order | null>(null);
+  const [noShowFor, setNoShowFor] = useState<Order | null>(null);
 
   const waiting = useMemo(
     () => orders.filter((o) => o.cancelledAt === null && o.status === STATUS.ORDERED),
@@ -47,14 +56,23 @@ export default function Ordered() {
     return [...filtered].sort((a, b) => a.customerName.localeCompare(b.customerName));
   }, [waiting, query]);
 
-  const toPrep = (o: Order) => {
+  /** The counter's whole job in one step: record how they paid, and send it to the kitchen. */
+  const takePayment = (o: Order, method: PaymentMethod) => {
+    setPayFor(null);
     void mutateOrder({
       id: o.id,
-      patch: { status: STATUS.IN_PREPARATION, paidAt: o.paidAt ?? serverNow() },
-      request: () => crewApi.transition(o.id, STATUS.ORDERED, STATUS.IN_PREPARATION).then((r) => r.order),
+      patch: {
+        status: STATUS.IN_PREPARATION,
+        paidAt: o.paidAt ?? serverNow(),
+        paymentMethod: method,
+      },
+      request: () =>
+        crewApi
+          .transition(o.id, STATUS.ORDERED, STATUS.IN_PREPARATION, method)
+          .then((r) => r.order),
       alreadyDone: (x) => x.status === STATUS.IN_PREPARATION,
       undo: {
-        text: `#${o.id} ${o.customerName} → preparation`,
+        text: `#${o.id} ${o.customerName} → preparation (${PAYMENT_LABEL[method]})`,
         label: 'Undo',
         run: () =>
           crewApi.transition(o.id, STATUS.IN_PREPARATION, STATUS.ORDERED).then((r) => r.order),
@@ -63,6 +81,7 @@ export default function Ordered() {
   };
 
   const cancel = (o: Order) => {
+    setNoShowFor(null);
     void mutateOrder({
       id: o.id,
       patch: { cancelledAt: serverNow(), cancelReason: 'no-show' },
@@ -76,12 +95,16 @@ export default function Ordered() {
     });
   };
 
+  const sellableTypes = (state?.pizzaTypes ?? []).filter(
+    (t) => t.archivedAt === null && !t.soldOut,
+  );
+
   return (
     <div className="maxw">
       <div className="row wrap" style={{ marginBottom: 12 }}>
         <input
           className="input search"
-          style={{ flex: 1, minWidth: 220 }}
+          style={{ flex: 1, minWidth: 200 }}
           placeholder="Search by name…"
           autoFocus
           value={query}
@@ -119,20 +142,114 @@ export default function Ordered() {
       ) : (
         <div className="olist">
           {shown.map((o) => (
-            <OrderRow key={o.id} order={o} onPay={() => toPrep(o)} onCancel={() => cancel(o)} />
+            <OrderRow
+              key={o.id}
+              order={o}
+              onPay={() => setPayFor(o)}
+              onCancel={() => setNoShowFor(o)}
+            />
           ))}
         </div>
       )}
+
+      {payFor ? (
+        <PaymentModal
+          order={payFor}
+          onClose={() => setPayFor(null)}
+          onChoose={(m) => takePayment(payFor, m)}
+        />
+      ) : null}
+
+      {noShowFor ? (
+        <Modal
+          title="Mark as a no-show?"
+          onClose={() => setNoShowFor(null)}
+          actions={
+            <>
+              <button type="button" className="btn" onClick={() => setNoShowFor(null)}>
+                Keep waiting
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={() => cancel(noShowFor)}
+              >
+                Yes, no-show
+              </button>
+            </>
+          }
+        >
+          <p>
+            <span aria-hidden="true">{noShowFor.pizzaTypeEmoji} </span>
+            <strong>
+              #{noShowFor.id} {noShowFor.customerName}
+            </strong>{' '}
+            · {noShowFor.pizzaTypeName}
+          </p>
+          <p className="small muted">
+            It comes off this screen but is not deleted — you can put it back from the admin
+            screen, or with the Undo button on the toast.
+          </p>
+        </Modal>
+      ) : null}
 
       {walkIn ? (
         <WalkInSheet
           onClose={() => setWalkIn(false)}
           onCreated={(order) => pushToast(`Walk-in created — #${order.id} ${order.customerName}`)}
           run={run}
-          types={(state?.pizzaTypes ?? []).filter((t) => t.archivedAt === null && !t.soldOut)}
+          types={sellableTypes}
         />
       ) : null}
     </div>
+  );
+}
+
+/** Three ways to have paid, one tap each. No default is pre-selected: the crew member has
+ *  to say which, because guessing would silently corrupt the end-of-night reckoning. */
+function PaymentModal({
+  order,
+  onClose,
+  onChoose,
+}: {
+  order: Order;
+  onClose: () => void;
+  onChoose: (method: PaymentMethod) => void;
+}) {
+  return (
+    <Modal
+      title={`How did #${order.id} pay?`}
+      onClose={onClose}
+      actions={
+        <button type="button" className="btn" onClick={onClose}>
+          Cancel
+        </button>
+      }
+    >
+      <p className="muted" style={{ marginTop: -6 }}>
+        <span aria-hidden="true">{order.pizzaTypeEmoji} </span>
+        <strong>{order.customerName}</strong> · {order.pizzaTypeName}
+      </p>
+      <div className="stack">
+        {PAYMENT_METHODS.map((m) => (
+          <button
+            key={m}
+            type="button"
+            className="btn btn-lg btn-block pay-option"
+            onClick={() => onChoose(m)}
+          >
+            <span className="pay-emoji" aria-hidden="true">
+              {PAYMENT_EMOJI[m]}
+            </span>
+            <span className="pay-text">
+              <span className="pay-label">{PAYMENT_LABEL[m]}</span>
+              <span className="pay-hint">{PAYMENT_HINT[m]}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+      <div className="hint">This goes on the order and shows up on the admin screen.</div>
+    </Modal>
   );
 }
 
@@ -157,6 +274,9 @@ function OrderRow({
         borderColor: p?.failed ? 'var(--warn)' : undefined,
       }}
     >
+      <span className="orow-emoji" aria-hidden="true">
+        {order.pizzaTypeEmoji}
+      </span>
       <span className="orow-no">#{order.id}</span>
       <div className="orow-main">
         <div className="orow-name">{order.customerName}</div>
@@ -170,14 +290,8 @@ function OrderRow({
         <button type="button" className="btn btn-ghost btn-sm" disabled={locked} onClick={onCancel}>
           No-show
         </button>
-        <button
-          type="button"
-          className="btn btn-ok"
-          style={{ minHeight: 64, minWidth: 150, fontSize: '1.05rem' }}
-          disabled={locked}
-          onClick={onPay}
-        >
-          PAID → PREP
+        <button type="button" className="btn btn-ok btn-advance" disabled={locked} onClick={onPay}>
+          MOVE TO PREP
         </button>
       </div>
     </div>
@@ -193,7 +307,7 @@ function WalkInSheet({
   onClose: () => void;
   onCreated: (order: Order) => void;
   run: (fn: () => Promise<unknown>) => Promise<boolean>;
-  types: { id: number; name: string; ingredients: string[] }[];
+  types: PizzaType[];
 }) {
   const [name, setName] = useState('');
   const [typeId, setTypeId] = useState<number | null>(types[0]?.id ?? null);
@@ -201,14 +315,19 @@ function WalkInSheet({
   const [busy, setBusy] = useState(false);
   const [created, setCreated] = useState<Order | null>(null);
 
-  const submit = async () => {
+  const submit = async (paymentMethod: PaymentMethod) => {
     if (!name.trim() || typeId === null || busy) return;
     setBusy(true);
     let made: Order | null = null;
     const okResult = await run(async () => {
       // Deliberately does NOT write to localStorage: a wall tablet must never accumulate
       // strangers' order tokens on its own customer home screen.
-      const res = await crewApi.walkIn({ customerName: name.trim(), pizzaTypeId: typeId, note: note.trim() });
+      const res = await crewApi.walkIn({
+        customerName: name.trim(),
+        pizzaTypeId: typeId,
+        note: note.trim(),
+        paymentMethod,
+      });
       made = res.order;
       return res;
     });
@@ -231,6 +350,9 @@ function WalkInSheet({
         }
       >
         <div className="center">
+          <div style={{ fontSize: '2.6rem', lineHeight: 1 }} aria-hidden="true">
+            {created.pizzaTypeEmoji}
+          </div>
           <div className="order-no">
             <span className="hash">#</span>
             {created.id}
@@ -239,30 +361,25 @@ function WalkInSheet({
             {created.customerName}
           </p>
           <p className="muted">{created.pizzaTypeName}</p>
-          <p className="small muted">Already marked paid and sent to preparation.</p>
+          <p className="small muted">
+            {created.paymentMethod ? PAYMENT_LABEL[created.paymentMethod] : 'Paid'} · sent to
+            preparation.
+          </p>
         </div>
       </Modal>
     );
   }
+
+  const ready = Boolean(name.trim()) && typeId !== null && !busy;
 
   return (
     <Modal
       title="New walk-in order"
       onClose={onClose}
       actions={
-        <>
-          <button type="button" className="btn" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={busy || !name.trim() || typeId === null}
-            onClick={() => void submit()}
-          >
-            {busy ? 'Adding…' : 'Add (paid)'}
-          </button>
-        </>
+        <button type="button" className="btn" onClick={onClose}>
+          Cancel
+        </button>
       }
     >
       <div className="stack">
@@ -297,6 +414,9 @@ function WalkInSheet({
                     checked={typeId === t.id}
                     onChange={() => setTypeId(t.id)}
                   />
+                  <span className="choice-emoji" aria-hidden="true">
+                    {t.emoji}
+                  </span>
                   <span>
                     <span className="choice-name">{t.name}</span>
                     {t.ingredients.length ? (
@@ -323,7 +443,33 @@ function WalkInSheet({
             onChange={(e) => setNote(e.target.value)}
           />
         </div>
-        <div className="hint">Cash is taken now — this goes straight into preparation.</div>
+
+        {/* Creating and paying are one moment at the counter, so the payment buttons ARE
+            the submit buttons - one tap rather than two. */}
+        <div>
+          <span className="field" style={{ display: 'block', fontWeight: 650, marginBottom: 6 }}>
+            How are they paying?
+          </span>
+          <div className="stack">
+            {PAYMENT_METHODS.map((m) => (
+              <button
+                key={m}
+                type="button"
+                className="btn btn-lg btn-block pay-option"
+                disabled={!ready}
+                onClick={() => void submit(m)}
+              >
+                <span className="pay-emoji" aria-hidden="true">
+                  {PAYMENT_EMOJI[m]}
+                </span>
+                <span className="pay-text">
+                  <span className="pay-label">{busy ? 'Adding…' : PAYMENT_LABEL[m]}</span>
+                  <span className="pay-hint">{PAYMENT_HINT[m]}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
     </Modal>
   );

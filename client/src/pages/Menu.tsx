@@ -3,7 +3,11 @@ import { crewApi } from '../api.ts';
 import { useLive } from '../live.tsx';
 import { Modal } from '../components.tsx';
 import { mmss } from '../useNow.ts';
+import { DEFAULT_PIZZA_EMOJI } from '../../../shared/payment.ts';
 import type { PizzaType } from '../../../shared/types.ts';
+
+/** Matches the oven screen, so one tap means the same thing everywhere. */
+const BAKE_STEP_S = 15;
 
 export default function Menu() {
   const { state, orders, run } = useLive();
@@ -54,6 +58,9 @@ export default function Menu() {
           <div className="stack">
             {retired.map((t) => (
               <div key={t.id} className="orow" style={{ opacity: 0.75 }}>
+                <span className="orow-emoji" aria-hidden="true">
+                  {t.emoji}
+                </span>
                 <div className="orow-main">
                   <div className="orow-name" style={{ fontSize: '1.1rem' }}>
                     {t.name}
@@ -105,12 +112,19 @@ function TypeRow({
 }) {
   const { run } = useLive();
   const [name, setName] = useState(type.name);
+  const [emoji, setEmoji] = useState(type.emoji);
   const [ingredients, setIngredients] = useState(type.ingredients.join(', '));
 
   const saveName = () => {
     const v = name.trim();
     if (v && v !== type.name) void run(() => crewApi.updateType(type.id, { name: v }));
     else setName(type.name);
+  };
+
+  const saveEmoji = () => {
+    const v = emoji.trim();
+    if (v && v !== type.emoji) void run(() => crewApi.updateType(type.id, { emoji: v }));
+    else setEmoji(type.emoji);
   };
 
   const saveIngredients = () => {
@@ -132,14 +146,26 @@ function TypeRow({
     <div className="card" style={{ opacity: type.soldOut ? 0.72 : 1 }}>
       <div className="row wrap" style={{ gap: 10, alignItems: 'flex-start' }}>
         <div style={{ flex: 1, minWidth: 220 }}>
-          <input
-            className="input"
-            style={{ fontWeight: 700, fontSize: '1.1rem' }}
-            value={name}
-            maxLength={60}
-            onChange={(e) => setName(e.target.value)}
-            onBlur={saveName}
-          />
+          <div className="row" style={{ gap: 8 }}>
+            {/* The emoji is what the crew actually recognise at a glance on every other
+                screen, so it is edited right next to the name rather than buried. */}
+            <input
+              className="input emoji-input"
+              aria-label={`Emoji for ${type.name}`}
+              value={emoji}
+              maxLength={16}
+              onChange={(e) => setEmoji(e.target.value)}
+              onBlur={saveEmoji}
+            />
+            <input
+              className="input"
+              style={{ fontWeight: 700, fontSize: '1.1rem', flex: 1 }}
+              value={name}
+              maxLength={60}
+              onChange={(e) => setName(e.target.value)}
+              onBlur={saveName}
+            />
+          </div>
           <input
             className="input"
             style={{ marginTop: 8 }}
@@ -159,8 +185,8 @@ function TypeRow({
             Bake time
           </span>
           <div className="chipbar">
-            <button type="button" className="chipbtn" onClick={() => bump(-30)}>
-              −30s
+            <button type="button" className="chipbtn" onClick={() => bump(-BAKE_STEP_S)}>
+              −15s
             </button>
             <span
               className="chipbtn"
@@ -168,8 +194,8 @@ function TypeRow({
             >
               {mmss(type.bakeSeconds * 1000)}
             </span>
-            <button type="button" className="chipbtn" onClick={() => bump(30)}>
-              +30s
+            <button type="button" className="chipbtn" onClick={() => bump(BAKE_STEP_S)}>
+              +15s
             </button>
           </div>
         </div>
@@ -233,6 +259,7 @@ function DeleteTypeButton({ type, uses }: { type: PizzaType; uses: number }) {
 function AddTypeModal({ onClose }: { onClose: () => void }) {
   const { run } = useLive();
   const [name, setName] = useState('');
+  const [emoji, setEmoji] = useState(DEFAULT_PIZZA_EMOJI);
   const [ingredients, setIngredients] = useState('');
   const [bakeSeconds, setBakeSeconds] = useState(300);
   const [busy, setBusy] = useState(false);
@@ -243,6 +270,7 @@ function AddTypeModal({ onClose }: { onClose: () => void }) {
     const ok = await run(() =>
       crewApi.createType({
         name: name.trim(),
+        emoji: emoji.trim() || DEFAULT_PIZZA_EMOJI,
         ingredients: ingredients
           .split(',')
           .map((s) => s.trim())
@@ -277,16 +305,29 @@ function AddTypeModal({ onClose }: { onClose: () => void }) {
       <div className="stack">
         <div>
           <label className="field" htmlFor="tname">
-            Name
+            Emoji and name
           </label>
-          <input
-            id="tname"
-            className="input"
-            autoFocus
-            maxLength={60}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
+          <div className="row" style={{ gap: 8 }}>
+            <input
+              className="input emoji-input"
+              aria-label="Emoji"
+              maxLength={16}
+              value={emoji}
+              onChange={(e) => setEmoji(e.target.value)}
+            />
+            <input
+              id="tname"
+              className="input"
+              style={{ flex: 1 }}
+              autoFocus
+              maxLength={60}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+          <div className="hint">
+            The emoji shows on every crew screen — pick one you can tell apart at a glance.
+          </div>
         </div>
         <div>
           <label className="field" htmlFor="ting">
@@ -309,9 +350,9 @@ function AddTypeModal({ onClose }: { onClose: () => void }) {
             <button
               type="button"
               className="chipbtn"
-              onClick={() => setBakeSeconds((s) => Math.max(30, s - 30))}
+              onClick={() => setBakeSeconds((s) => Math.max(30, s - BAKE_STEP_S))}
             >
-              −30s
+              −15s
             </button>
             <span className="chipbtn" style={{ cursor: 'default', minWidth: 62, textAlign: 'center' }}>
               {mmss(bakeSeconds * 1000)}
@@ -319,9 +360,9 @@ function AddTypeModal({ onClose }: { onClose: () => void }) {
             <button
               type="button"
               className="chipbtn"
-              onClick={() => setBakeSeconds((s) => Math.min(3600, s + 30))}
+              onClick={() => setBakeSeconds((s) => Math.min(3600, s + BAKE_STEP_S))}
             >
-              +30s
+              +15s
             </button>
           </div>
         </div>

@@ -44,7 +44,13 @@ publicRouter.get('/health', (_req, res) => {
 publicRouter.get('/config', (_req, res) => {
   const pizzaTypes: PublicPizzaType[] = allPizzaTypes()
     .filter((t) => t.archivedAt === null)
-    .map((t) => ({ id: t.id, name: t.name, ingredients: t.ingredients, soldOut: t.soldOut }));
+    .map((t) => ({
+      id: t.id,
+      name: t.name,
+      emoji: t.emoji,
+      ingredients: t.ingredients,
+      soldOut: t.soldOut,
+    }));
   res.json({ ordersOpen: readSettings().ordersOpen, pizzaTypes, serverNow: Date.now() });
 });
 

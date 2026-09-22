@@ -1,10 +1,20 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { NavLink } from 'react-router';
 import { useLive } from './live.tsx';
 import { useNow } from './useNow.ts';
+import {
+  audioReady,
+  isMuted,
+  setMuted,
+  testPrepSound,
+  testSound,
+  unlockAudio,
+} from './alarm.ts';
 import { STATUS, STATUS_LABEL } from '../../shared/status.ts';
 import type { Status } from '../../shared/status.ts';
+import { PAYMENT_EMOJI, PAYMENT_LABEL } from '../../shared/payment.ts';
+import type { PaymentMethod } from '../../shared/payment.ts';
 import type { Order } from '../../shared/types.ts';
 
 // --- Status chip ---------------------------------------------------------------------------
@@ -14,6 +24,70 @@ export function StatusChip({ order }: { order: Order }) {
     return <span className="chip chip-cancelled">Cancelled</span>;
   }
   return <span className={`chip chip-${order.status}`}>{STATUS_LABEL[order.status]}</span>;
+}
+
+/** What the counter recorded. `unpaid` is rendered plainly rather than hidden, because
+ *  an order that reached the kitchen without a payment recorded is worth noticing. */
+export function PaymentChip({ method }: { method: PaymentMethod | null }) {
+  if (method === null) return <span className="chip chip-unpaid">unpaid</span>;
+  return (
+    <span className={`chip chip-pay-${method}`}>
+      {PAYMENT_EMOJI[method]} {PAYMENT_LABEL[method]}
+    </span>
+  );
+}
+
+/**
+ * Tablets refuse audio until a real gesture starts it, and whether that has happened is
+ * not something React re-renders on - hence the slow poll. Shared by the oven and prep
+ * screens so both stations get the same control in the same place.
+ */
+export function SoundToggle({ kind }: { kind: 'oven' | 'prep' }) {
+  const [muted, setMutedState] = useState(() => isMuted());
+  const [ready, setReady] = useState(() => audioReady());
+
+  useEffect(() => {
+    const t = setInterval(() => setReady(audioReady()), 2000);
+    return () => clearInterval(t);
+  }, []);
+
+  const demo = kind === 'prep' ? testPrepSound : testSound;
+
+  if (!ready && !muted) {
+    return (
+      <button
+        type="button"
+        className="btn btn-sm"
+        onClick={() => {
+          unlockAudio();
+          demo();
+          setReady(audioReady());
+          setMutedState(isMuted());
+        }}
+      >
+        🔇 Tap to enable sound
+      </button>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className="btn btn-sm btn-ghost"
+      onClick={() => {
+        const next = !muted;
+        setMuted(next);
+        setMutedState(next);
+        if (!next) {
+          unlockAudio();
+          demo();
+          setReady(audioReady());
+        }
+      }}
+    >
+      {muted ? '🔇 Sound off' : '🔔 Sound on'}
+    </button>
+  );
 }
 
 export function NoteBadge({ note }: { note: string }) {
@@ -236,7 +310,12 @@ export function PizzaCard({
   return (
     <button type="button" className={cls} onClick={onClick} disabled={!onClick}>
       {p?.failed ? <span className="badge-unsaved">not saved</span> : null}
-      <span className="pcard-no">#{order.id}</span>
+      <span className="pcard-head">
+        <span className="pcard-emoji" aria-hidden="true">
+          {order.pizzaTypeEmoji}
+        </span>
+        <span className="pcard-no">#{order.id}</span>
+      </span>
       <span className="pcard-name">{order.customerName}</span>
       <span className="pcard-type">{order.pizzaTypeName}</span>
       {order.note.trim() ? <span className="note">{order.note}</span> : null}

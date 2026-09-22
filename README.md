@@ -48,12 +48,12 @@ tablet on its own URL — the URL is the memory, so it survives a reload, a slee
 |---|---|---|
 | Guests | `/` | Their orders, live status. No login. |
 | Guests | `/new` | Place an order. |
-| Counter | `/crew/orders` | Everyone who has ordered and not yet paid. Search by name, take cash, tap **PAID → PREP**. Also **+ Walk-in** for someone who never pre-ordered. |
-| Prep table | `/crew/prep` | Pizzas to build. Tap one when it is topped and ready for the oven. |
+| Counter | `/crew/orders` | Everyone who has ordered and not yet paid. Search by name, tap **MOVE TO PREP** and say how they paid. Also **+ Walk-in** for someone who never pre-ordered. |
+| Prep table | `/crew/prep` | A list of pizzas to build, oldest at the top. Each has a green **MOVE TO OVEN** button. Dings when a new one arrives. |
 | Oven | `/crew/oven` | Everything the oven crew needs on one screen: what is waiting to go in, the decks and their slots, timers, the alarm. |
 | Pickup | `/crew/ready` | Big numbers and names. Tap when handed over. |
-| Anyone | `/crew/menu` | The pizza list: names, ingredients, bake times, sold-out. |
-| Anyone | `/crew/admin` | All orders, the shopping list, backups, deleting. |
+| Anyone | `/crew/menu` | The pizza list: emoji, names, ingredients, bake times, sold-out. |
+| Anyone | `/crew/admin` | All orders, how everyone paid, the shopping list, backups, deleting. |
 
 The bar across the top of every crew screen shows `ORD · PREP · OVEN · READY` — one chip per
 screen — so you can see how far behind you are without leaving your station. `OVEN` reads
@@ -72,6 +72,12 @@ it is a flag on the order, not a step, and it is always reversible from the admi
 
 **Undo.** Every forward tap raises a toast with an **Undo** button for ten seconds.
 
+**Moving a pizza on is always a button, never a tap on the card.** On the counter and prep
+screens it is the big green **MOVE TO PREP** / **MOVE TO OVEN**. On the oven screen, taking a
+pizza out asks first — every time, whether or not the timer has run out, because a blinking
+card is exactly the one a sleeve is most likely to brush past. **No-show** asks too; it is
+reversible either way, from the toast or the admin screen.
+
 **Taking a pizza back out of the oven** asks first, because that is the one move that destroys a
 timer it cannot get back. Moving a pizza between slots or decks never touches its timer.
 
@@ -79,6 +85,54 @@ timer it cannot get back. Moving a pizza between slots or decks never touches it
 the Unplaced tray — its old slot was freed when it came out, and something else may be in it by
 now — so give it a slot on the oven screen. Within two minutes it resumes the original timer
 (it assumes a mis-tap); after that it starts a fresh bake.
+
+---
+
+## Money
+
+Tapping **MOVE TO PREP** asks how they paid before the pizza goes anywhere:
+
+| | |
+|---|---|
+| 💶 **Cash** | Money in the tin |
+| 🅿️ **PayPal** | Paid on their phone |
+| 🎁 **Free** | Crew, comped, on the house |
+
+Nothing is pre-selected — the crew member has to say which, because a guess would quietly
+corrupt the end-of-night reckoning. Walk-ins answer the same question as they are created,
+in one tap.
+
+It is stored on the order and shown on `/crew/admin`: a breakdown across the three methods
+plus **Not paid yet**, and a column on every row. *Free* is counted on its own, so a comped
+crew pizza never looks like one the counter forgot to record. Moving an order backwards
+keeps the record (the money really did change hands); the **unpaid** button on a row clears
+it properly for a genuine mis-tap.
+
+---
+
+## Sounds
+
+Built for a loud room, and deliberately opposite shapes so you never have to think about
+which is which:
+
+- **A pizza is overdue in the oven** — four hard beeps warbling between two high pitches,
+  roughly a smoke alarm. Repeats every 9s, tightening to every 4.5s once something has been
+  over for a minute. Oven screen.
+- **A new pizza has arrived to be made** — two *descending* notes, an octave lower and over
+  in a third of the time, so it is obviously the less urgent of the two. Prep screen.
+
+Why they sound like that: square waves rather than sine (a pure tone has no harmonics and is
+trivially masked by kitchen noise), around 3 kHz (where the ear canal resonates and hearing
+is most sensitive — the same reason smoke alarms sit there), warbling rather than steady (a
+constant pitch fades into the background of a noisy room, and a changing one dodges a fan
+whine that would mask a fixed one), and soft-clipped to add harmonics without ever hard
+clipping the output. Measured at ~3.5× the loudness of an ordinary notification chime, with
+the peak held just under full scale so nothing distorts.
+
+Both need one tap to switch on, because tablets block audio until you interact with the
+page — the crew login does it, or use the button on the screen itself. Muting is per device.
+Tapping the sound button also plays that screen's sound, so you can check it in the room
+before the night starts.
 
 ---
 
@@ -102,6 +156,10 @@ is what survives an oven mitt and a wet finger.
 card and then tap the destination. Dropping it on an occupied slot **swaps the two pizzas**.
 Neither timer is touched by any move — a pizza that has been in for six minutes still says so.
 
+**Nudging a timer.** `−0:15` and `+0:15` on each baking card. Fine-grained on purpose: the
+adjustment that actually gets used is "a bit longer", not "a whole minute longer". The value
+sent is absolute, so a double-tap on bad wifi cannot silently add thirty seconds twice.
+
 **A slot holds exactly one pizza.** That is enforced by the database, not just the screen, so
 two people tapping the same empty slot at the same instant cannot double-book it — the second
 one is told someone got there first. Putting a queued pizza onto a full slot is refused rather
@@ -123,19 +181,23 @@ cannot collide. The layout is stored on the server, so every tablet sees the sam
 **Timers are server-anchored.** A tablet with a wrong clock still counts down correctly, and
 restarting the server mid-bake changes nothing.
 
-**When time is up** the card blinks and (if sound is on) it pings every 20 seconds. Tap it once
-to send it to the ready board. Nothing ever advances by itself — whether an overdue pizza is
-perfect or ruined is your call, not the app's.
+**When time is up** the card blinks and (if sound is on) it pings every 20 seconds. Tap it and
+confirm to send it to the ready board. Nothing ever advances by itself — whether an overdue
+pizza is perfect or ruined is your call, not the app's.
 
-**Sound** needs one tap to switch on, because tablets block audio until you interact. The crew
-login does it for you; otherwise use the button on the oven screen. Note an iPad's physical
-silent switch mutes it regardless.
+An iPad's physical silent switch mutes Web Audio regardless of the in-app setting.
 
 ---
 
 ## The menu
 
-`/crew/menu`. Each pizza has a name, an ingredient list and a bake time.
+`/crew/menu`. Each pizza has an **emoji**, a name, an ingredient list and a bake time
+(adjusted in 15-second steps, same as the oven).
+
+The emoji is not decoration — it is what the crew actually recognise at a glance on every
+screen, so pick ones that are easy to tell apart rather than literally correct. It is
+snapshotted onto an order the same way the name is, so changing it never rewrites an order
+someone already placed.
 
 - **Sold out** takes effect immediately, no restart.
 - **Retire** hides a pizza from guests while leaving every order that used it untouched. This is
@@ -171,12 +233,15 @@ Pizza types and oven layers survive a purge, so you are ready for next time.
 - **Nothing is ever deleted except from the admin screen**, deliberately, with a confirmation.
   Cancel is what you want for a no-show — it is reversible and keeps the record.
 - **A guest can cancel their own order**, but only while it is still unpaid and waiting. Once
-  you have taken cash and tapped PAID → PREP their button disappears.
+  you have taken payment and tapped MOVE TO PREP their button disappears.
 - **Two people called Anna** are told apart by their order number and pizza, both of which are on
   every row and every card. The number is what to call out.
 - **The connection indicator** in the corner counts seconds since the last update. If it turns
   red and the board greys out, that screen is stale — check the Wi-Fi. A ticking number is used
   rather than a green dot on purpose: a dot can be painted by code that has already died.
+- **Phones work too.** Below 760px the crew screens scroll like a normal page instead of
+  locking to the viewport, the oven trays stack above the decks, and slots and buttons go
+  full width. A phone is a perfectly good second prep station.
 - **Tablets:** set the screen timeout to Never. The app asks to keep the screen awake, but
   browsers only allow that over https, which a plain LAN address is not.
 - **One tab per device.** Nothing breaks with more, it is just wasted polling.

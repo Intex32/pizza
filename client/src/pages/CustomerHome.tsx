@@ -96,9 +96,14 @@ export default function CustomerHome() {
                 style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}
               >
                 <div className="row-between" style={{ alignItems: 'flex-start' }}>
-                  <div className="order-no">
-                    <span className="hash">#</span>
-                    {order.id}
+                  <div className="row" style={{ gap: 10, alignItems: 'center' }}>
+                    <span className="order-emoji" aria-hidden="true">
+                      {order.pizzaTypeEmoji}
+                    </span>
+                    <div className="order-no">
+                      <span className="hash">#</span>
+                      {order.id}
+                    </div>
                   </div>
                   <StatusChip order={order} />
                 </div>

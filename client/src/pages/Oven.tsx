@@ -11,16 +11,17 @@ import {
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 import { crewApi, serverNow } from '../api.ts';
 import { useLive } from '../live.tsx';
-import { EmptyState, Modal, useBoardStale } from '../components.tsx';
+import { EmptyState, Modal, SoundToggle, useBoardStale } from '../components.tsx';
 import { useWakeLock } from '../useWakeLock.ts';
 import { bakeState, elapsed, useNow } from '../useNow.ts';
-import { audioReady, isMuted, maybeAlarm, setMuted, testSound, unlockAudio } from '../alarm.ts';
+import { maybeAlarm } from '../alarm.ts';
 import { STATUS } from '../../../shared/status.ts';
 import type { Order, OvenLayer } from '../../../shared/types.ts';
 
 const VERY_LATE_MS = 60_000;
-/** Below this the crew almost certainly meant to tap it, so no confirmation. */
-const NO_CONFIRM_REMAINING_MS = 20_000;
+/** How much one tap of a timer chip is worth. Fine-grained on purpose: the adjustment
+ *  that actually gets used is "a bit longer", not "a whole minute longer". */
+const BAKE_STEP_S = 15;
 
 /** Where a pizza can be dropped. A deck is a numbered row, so a target is deck + position. */
 type Zone = { kind: 'slot'; layerId: number; slot: number } | { kind: 'unplaced' };
@@ -59,7 +60,6 @@ export default function Oven() {
   const [editing, setEditing] = useState(false);
   const [confirmReady, setConfirmReady] = useState<Order | null>(null);
   const [confirmOut, setConfirmOut] = useState<Order | null>(null);
-  const [muted, setMutedState] = useState(() => isMuted());
 
   const layers = state?.layers ?? [];
 
@@ -98,13 +98,23 @@ export default function Oven() {
     return map;
   }, [baking, layers]);
 
-  const overdueCount = baking.filter(
-    (o) => bakeState(o.bakingStartedAt, o.bakeSeconds, now).expired,
-  ).length;
+  // How many are over, and how far gone the worst one is - the alarm nags faster once
+  // something has been ignored for a while.
+  const { overdueCount, maxOverdueMs } = useMemo(() => {
+    let count = 0;
+    let worst = 0;
+    for (const o of baking) {
+      const t = bakeState(o.bakingStartedAt, o.bakeSeconds, now);
+      if (!t.expired) continue;
+      count += 1;
+      worst = Math.max(worst, -t.remainingMs);
+    }
+    return { overdueCount: count, maxOverdueMs: worst };
+  }, [baking, now]);
 
   useEffect(() => {
-    maybeAlarm(overdueCount, Date.now());
-  }, [overdueCount, now]);
+    maybeAlarm(overdueCount, maxOverdueMs, Date.now());
+  }, [overdueCount, maxOverdueMs, now]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -192,10 +202,10 @@ export default function Oven() {
       setSelected((s) => (s === o.id ? null : o.id));
       return;
     }
-    const t = bakeState(o.bakingStartedAt, o.bakeSeconds, now);
-    // Expired is the hot path: one tap, no dialog, because that is the tap that saves a pizza.
-    if (t.expired || !t.valid || t.remainingMs <= NO_CONFIRM_REMAINING_MS) markReady(o);
-    else setConfirmReady(o);
+    // ALWAYS confirm. Taking a pizza out is the one irreversible-feeling move on this
+    // screen, and a card that is blinking for attention is exactly the one a sleeve is
+    // most likely to brush against.
+    setConfirmReady(o);
   };
 
   /** Tapping a slot is the reliable half of the interaction; dragging is the enhancement. */
@@ -263,35 +273,7 @@ export default function Oven() {
             </span>
           )}
           <span className="spacer" />
-          {!audioReady() && !muted ? (
-            <button
-              type="button"
-              className="btn btn-sm"
-              onClick={() => {
-                unlockAudio();
-                testSound();
-                setMutedState(isMuted());
-              }}
-            >
-              🔇 Tap to enable sound
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="btn btn-sm btn-ghost"
-              onClick={() => {
-                const next = !muted;
-                setMuted(next);
-                setMutedState(next);
-                if (!next) {
-                  unlockAudio();
-                  testSound();
-                }
-              }}
-            >
-              {muted ? '🔇 Sound off' : '🔔 Sound on'}
-            </button>
-          )}
+          <SoundToggle kind="oven" />
         </div>
 
         <div className="oven-trays">
@@ -427,28 +409,12 @@ export default function Oven() {
       </DragOverlay>
 
       {confirmReady ? (
-        <Modal
-          title="Take it out already?"
+        <ReadyConfirm
+          order={confirmReady}
+          now={now}
           onClose={() => setConfirmReady(null)}
-          actions={
-            <>
-              <button type="button" className="btn" onClick={() => setConfirmReady(null)}>
-                Leave it in
-              </button>
-              <button type="button" className="btn btn-ok" onClick={() => markReady(confirmReady)}>
-                Yes, it’s ready
-              </button>
-            </>
-          }
-        >
-          <p>
-            #{confirmReady.id} {confirmReady.customerName} still has{' '}
-            <strong>
-              {bakeState(confirmReady.bakingStartedAt, confirmReady.bakeSeconds, now).label}
-            </strong>{' '}
-            left.
-          </p>
-        </Modal>
+          onConfirm={() => markReady(confirmReady)}
+        />
       ) : null}
 
       {confirmOut ? (
@@ -845,6 +811,59 @@ function DeleteDeckModal({
   );
 }
 
+// --- Confirm taking a pizza out ----------------------------------------------------------------
+
+function ReadyConfirm({
+  order,
+  now,
+  onClose,
+  onConfirm,
+}: {
+  order: Order;
+  now: number;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const t = bakeState(order.bakingStartedAt, order.bakeSeconds, now);
+  return (
+    <Modal
+      title={t.expired ? 'Take it out?' : 'Take it out early?'}
+      onClose={onClose}
+      actions={
+        <>
+          <button type="button" className="btn" onClick={onClose}>
+            Leave it in
+          </button>
+          <button type="button" className="btn btn-ok" onClick={onConfirm}>
+            Yes, it’s ready
+          </button>
+        </>
+      }
+    >
+      <p>
+        <span aria-hidden="true">{order.pizzaTypeEmoji} </span>
+        <strong>
+          #{order.id} {order.customerName}
+        </strong>{' '}
+        · {order.pizzaTypeName}
+      </p>
+      <p>
+        {!t.valid ? (
+          'This pizza has no timer running.'
+        ) : t.expired ? (
+          <>
+            It is <strong>{t.label} over</strong> its bake time.
+          </>
+        ) : (
+          <>
+            It still has <strong>{t.label}</strong> left.
+          </>
+        )}
+      </p>
+    </Modal>
+  );
+}
+
 // --- Card -------------------------------------------------------------------------------------
 
 function OvenCard({
@@ -907,7 +926,12 @@ function OvenCard({
       {...listeners}
     >
       {p?.failed ? <span className="badge-unsaved">not saved</span> : null}
-      <span className="pcard-no">#{order.id}</span>
+      <span className="pcard-head">
+        <span className="pcard-emoji" aria-hidden="true">
+          {order.pizzaTypeEmoji}
+        </span>
+        <span className="pcard-no">#{order.id}</span>
+      </span>
       <span className="pcard-name">{order.customerName}</span>
       <span className="pcard-type">{order.pizzaTypeName}</span>
       {order.note.trim() ? <span className="note">{order.note}</span> : null}
@@ -934,17 +958,17 @@ function OvenCard({
               type="button"
               className="chipbtn"
               disabled={(order.bakeSeconds ?? 0) <= 30}
-              onClick={() => onAdjust?.(-60)}
+              onClick={() => onAdjust?.(-BAKE_STEP_S)}
             >
-              −1:00
+              −0:15
             </button>
             <button
               type="button"
               className="chipbtn"
               disabled={(order.bakeSeconds ?? 0) >= 3600}
-              onClick={() => onAdjust?.(30)}
+              onClick={() => onAdjust?.(BAKE_STEP_S)}
             >
-              +0:30
+              +0:15
             </button>
             {onMove ? (
               <button type="button" className="chipbtn" title="Move to another slot" onClick={onMove}>

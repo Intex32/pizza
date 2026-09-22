@@ -187,6 +187,11 @@ p {
   vertical-align: 0.12em;
 }
 
+.order-emoji {
+  font-size: clamp(2.1rem, 1.6rem + 2.4vw, 2.9rem);
+  line-height: 1;
+}
+
 .order-name {
   font-weight: 650;
   font-size: 1.05rem;
@@ -403,6 +408,11 @@ label.field {
   accent-color: var(--accent);
   flex: none;
 }
+.choice-emoji {
+  font-size: 1.9rem;
+  line-height: 1;
+  flex: none;
+}
 .choice-name {
   font-weight: 700;
 }
@@ -548,4 +558,63 @@ label.field {
   justify-content: flex-end;
   margin-top: 18px;
   flex-wrap: wrap;
+}
+
+/* --- Payment ----------------------------------------------------------------
+   Three ways to have paid, recorded at the counter. */
+.chip-unpaid {
+  background: var(--surface-2);
+  color: var(--muted);
+  border-color: var(--border);
+}
+.chip-pay-cash {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+.chip-pay-paypal {
+  background: var(--info-soft);
+  color: var(--info);
+}
+.chip-pay-free {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+/* Big one-tap targets: this dialog is used at the counter with a queue behind it. */
+.pay-option {
+  justify-content: flex-start;
+  gap: 14px;
+  min-height: 72px;
+  text-align: left;
+  padding: 0 18px;
+}
+.pay-emoji {
+  font-size: 1.9rem;
+  line-height: 1;
+  flex: none;
+}
+.pay-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+.pay-label {
+  font-size: 1.1rem;
+  font-weight: 750;
+}
+.pay-hint {
+  font-size: 0.82rem;
+  font-weight: 500;
+  opacity: 0.7;
+}
+
+/* A single emoji, shown at the size it will actually be read at. */
+.emoji-input {
+  width: 64px;
+  flex: none;
+  text-align: center;
+  font-size: 1.6rem;
+  line-height: 1;
+  padding: 6px;
 }

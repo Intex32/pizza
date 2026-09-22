@@ -254,8 +254,8 @@ body:has(.kiosk) {
 /* --- Pizza cards --------------------------------------------------------- */
 .board {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  gap: 14px;
   align-content: start;
 }
 .board.wide {
@@ -266,9 +266,9 @@ body:has(.kiosk) {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  min-height: 128px;
-  padding: 14px;
+  gap: 7px;
+  min-height: 152px;
+  padding: 16px;
   border-radius: var(--radius);
   background: var(--surface);
   border: 1px solid var(--border);
@@ -285,22 +285,33 @@ body:has(.kiosk) {
   outline: 3px solid var(--accent);
   outline-offset: 2px;
 }
+/* The emoji and the number sit together on one line: between them they identify the
+   pizza faster than any amount of text. */
+.pcard-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.pcard-emoji {
+  font-size: 2.1rem;
+  line-height: 1;
+}
 .pcard-no {
-  font-size: 1.6rem;
+  font-size: 1.7rem;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   line-height: 1;
   color: var(--muted);
 }
 .pcard-name {
-  font-size: 1.35rem;
+  font-size: 1.5rem;
   font-weight: 750;
   line-height: 1.1;
   overflow-wrap: anywhere;
 }
 .pcard-type {
   color: var(--muted);
-  font-size: 0.95rem;
+  font-size: 1rem;
 }
 .pcard-meta {
   margin-top: auto;
@@ -485,8 +496,8 @@ body:has(.kiosk) {
 .slot {
   position: relative;
   display: flex;
-  width: 185px;
-  min-height: 132px;
+  width: 215px;
+  min-height: 168px;
   flex: none;
   border-radius: var(--radius);
 }
@@ -559,7 +570,7 @@ body:has(.kiosk) {
   flex: 1;
 }
 .slot-row .pcard {
-  width: 190px;
+  width: 215px;
   /* No min-height override: a baking card carries a timer AND its chip row, and anything
      that crops either of those is worse than a slightly taller card. */
   min-height: 0;
@@ -572,7 +583,7 @@ body:has(.kiosk) {
 }
 /* The waiting / unplaced trays can fill up; they scroll rather than pushing the decks off. */
 .tray .slot-row {
-  max-height: 232px;
+  max-height: 264px;
   overflow: auto;
 }
 
@@ -617,6 +628,27 @@ body:has(.kiosk) {
   gap: 6px;
   flex-wrap: wrap;
 }
+
+/* On a pizza card the controls must stay on ONE row. Wrapping made the card taller than its
+   slot, which pushed the timer - the one thing on the card that matters - out of view.
+   Auto-flow columns rather than a fixed 4 because a card in the waiting tray has fewer:
+   whatever the count, they share one line equally and can never wrap. */
+.pcard .chipbar {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 5px;
+  width: 100%;
+}
+.pcard .chipbtn {
+  /* Horizontal padding goes, height stays: the tap target keeps its 44px in the direction
+     a thumb actually misses. */
+  min-height: 44px;
+  padding: 0 2px;
+  min-width: 0;
+  font-size: 0.78rem;
+  letter-spacing: -0.02em;
+}
 .chipbtn {
   font: inherit;
   font-size: 0.85rem;
@@ -649,25 +681,30 @@ body:has(.kiosk) {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 11px 14px;
+  padding: 14px 16px;
   border-radius: var(--radius-sm);
   background: var(--surface);
   border: 1px solid var(--border);
   flex-wrap: wrap;
 }
+.orow-emoji {
+  font-size: 2.3rem;
+  line-height: 1;
+  flex: none;
+}
 .orow-no {
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   color: var(--muted);
-  min-width: 2.8em;
-  font-size: 1.05rem;
+  min-width: 2.6em;
+  font-size: 1.15rem;
 }
 .orow-main {
   flex: 1;
   min-width: 160px;
 }
 .orow-name {
-  font-size: 1.32rem;
+  font-size: 1.42rem;
   font-weight: 700;
   line-height: 1.15;
   overflow-wrap: anywhere;
@@ -825,4 +862,144 @@ table.data td.wrap-cell {
 .maxw {
   max-width: 980px;
   margin: 0 auto;
+}
+
+/* --- The one green button that moves a pizza on ------------------------------
+   Deliberately large and deliberately the ONLY way forward on the list screens:
+   advancing a pizza should never be something a sleeve can do. */
+.btn-advance {
+  min-height: 64px;
+  min-width: 160px;
+  font-size: 1.05rem;
+  font-weight: 750;
+  letter-spacing: 0.01em;
+}
+
+/* --- Payment breakdown (admin) ---------------------------------------------- */
+.pay-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+}
+.pay-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 14px 10px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.pay-stat-emoji {
+  font-size: 1.6rem;
+  line-height: 1;
+}
+.pay-stat-n {
+  font-size: 1.9rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.pay-stat-label {
+  font-size: 0.82rem;
+  color: var(--muted);
+  text-align: center;
+}
+.pay-stat-cash {
+  border-color: color-mix(in srgb, var(--ok) 45%, transparent);
+}
+.pay-stat-paypal {
+  border-color: color-mix(in srgb, var(--info) 45%, transparent);
+}
+.pay-stat-free {
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+}
+
+/* ============================================================================
+   PHONES. A crew screen on a phone must scroll like a normal page: locking it to
+   100dvh with hidden overflow is right for a mounted tablet and unusable on a
+   handset, where the oven decks alone are taller than the viewport.
+   ============================================================================ */
+@media (max-width: 760px) {
+  .crew-shell {
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+  .crew-body,
+  .crew-body.no-scroll {
+    overflow: visible;
+    padding: 10px;
+  }
+  .crew-bar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    gap: 8px;
+  }
+
+  /* Stack the queue above the decks rather than squeezing them side by side. */
+  .oven-trays {
+    grid-template-columns: 1fr;
+  }
+  .tray .slot-row {
+    max-height: none;
+  }
+  .oven,
+  .oven-decks {
+    overflow: visible;
+  }
+
+  /* One slot per row, full width: a 215px card in a 360px viewport wastes half
+     the screen and makes every tap target smaller than it needs to be. */
+  .slot,
+  .slot-row .pcard {
+    width: 100%;
+  }
+  .slot {
+    min-height: 150px;
+  }
+
+  .board {
+    grid-template-columns: 1fr;
+  }
+  .ready-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  }
+
+  /* The action buttons get their own full-width row instead of being crushed
+     against the name. */
+  .orow {
+    align-items: flex-start;
+  }
+  .orow-actions {
+    width: 100%;
+  }
+  .orow-actions .btn-advance {
+    flex: 1;
+  }
+
+  .picker {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  }
+  .picker a {
+    min-height: 104px;
+  }
+
+  .deck-head {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 420px) {
+  .orow-emoji {
+    font-size: 1.9rem;
+  }
+  .orow-name {
+    font-size: 1.25rem;
+  }
+  .btn-advance {
+    min-width: 0;
+  }
 }

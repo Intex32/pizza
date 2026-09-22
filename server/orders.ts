@@ -20,6 +20,8 @@ import { ApiError, bad, clamp, conflict, notFound } from './validate.ts';
 import { CUSTOMER_CANCEL_REASON, STATUS, canTransition } from '../shared/status.ts';
 import type { Status } from '../shared/status.ts';
 import { DEFAULT_BAKE_SECONDS } from '../shared/menu.ts';
+import { DEFAULT_PIZZA_EMOJI } from '../shared/payment.ts';
+import type { PaymentMethod } from '../shared/payment.ts';
 import type { CustomerOrder, Order, OvenLayer, PizzaType } from '../shared/types.ts';
 
 type Row = Record<string, unknown>;
@@ -90,8 +92,8 @@ export function createCustomerOrder(input: {
     const result = db
       .prepare(
         'INSERT INTO orders (public_token, client_request_id, customer_name, note, ' +
-          'pizza_type_id, pizza_type_name, status, created_at, updated_at) ' +
-          'VALUES (:token, :rid, :name, :note, :typeId, :typeName, :status, :now, :now)',
+          'pizza_type_id, pizza_type_name, pizza_type_emoji, status, created_at, updated_at) ' +
+          'VALUES (:token, :rid, :name, :note, :typeId, :typeName, :emoji, :status, :now, :now)',
       )
       .run({
         token: newToken(),
@@ -101,6 +103,7 @@ export function createCustomerOrder(input: {
         typeId: type.id,
         // Snapshotted, so renaming or retiring the type never rewrites a placed order.
         typeName: type.name,
+        emoji: type.emoji,
         status: STATUS.ORDERED,
         now,
       });
@@ -156,6 +159,7 @@ export function createWalkInOrder(input: {
   customerName: string;
   pizzaTypeId: number;
   note: string;
+  paymentMethod: PaymentMethod;
 }): Order {
   return mutate(() => {
     const type = requireLiveType(input.pizzaTypeId);
@@ -163,8 +167,10 @@ export function createWalkInOrder(input: {
     const result = db
       .prepare(
         'INSERT INTO orders (public_token, customer_name, note, pizza_type_id, ' +
-          'pizza_type_name, status, paid_at, created_at, updated_at) ' +
-          'VALUES (:token, :name, :note, :typeId, :typeName, :status, :now, :now, :now)',
+          'pizza_type_name, pizza_type_emoji, payment_method, status, paid_at, ' +
+          'created_at, updated_at) ' +
+          'VALUES (:token, :name, :note, :typeId, :typeName, :emoji, :payment, :status, ' +
+          ':now, :now, :now)',
       )
       .run({
         token: newToken(),
@@ -172,6 +178,8 @@ export function createWalkInOrder(input: {
         note: input.note,
         typeId: type.id,
         typeName: type.name,
+        emoji: type.emoji,
+        payment: input.paymentMethod,
         status: STATUS.IN_PREPARATION,
         now,
       });
@@ -185,7 +193,12 @@ export function createWalkInOrder(input: {
  * Compare-and-swap on the status the client is currently rendering. Every side effect of a
  * move lives in this one statement, so both table CHECKs hold at every instant.
  */
-export function transitionOrder(id: number, expected: Status, next: Status): Order {
+export function transitionOrder(
+  id: number,
+  expected: Status,
+  next: Status,
+  paymentMethod: PaymentMethod | null = null,
+): Order {
   // Checked BEFORE adjacency so the one move a crew member would actually attempt
   // (WAITING_FOR_OVEN -> BAKING) gets the useful message rather than a generic rejection.
   if (next === STATUS.BAKING) {
@@ -208,6 +221,11 @@ export function transitionOrder(id: number, expected: Status, next: Status): Ord
           updated_at = :now,
           paid_at    = CASE WHEN :next = 'IN_PREPARATION' AND :expected = 'ORDERED'
                             THEN COALESCE(paid_at, :now) ELSE paid_at END,
+          -- Recorded only on the way FORWARD out of ORDERED. A backward move deliberately
+          -- keeps it, along with paid_at: by then the money really has changed hands.
+          payment_method = CASE WHEN :next = 'IN_PREPARATION' AND :expected = 'ORDERED'
+                                THEN COALESCE(:payment, payment_method)
+                                ELSE payment_method END,
           queued_at  = CASE WHEN :next = 'WAITING_FOR_OVEN' AND :expected = 'IN_PREPARATION'
                               THEN :now
                             WHEN :next = 'IN_PREPARATION' AND :expected = 'WAITING_FOR_OVEN'
@@ -228,7 +246,7 @@ export function transitionOrder(id: number, expected: Status, next: Status): Ord
                               ELSE picked_up_at END
         WHERE id = :id AND status = :expected AND cancelled_at IS NULL
       `)
-      .run({ id, expected, next, now });
+      .run({ id, expected, next, now, payment: paymentMethod });
 
     const order = requireOrder(id);
     if (Number(result.changes) === 0) {
@@ -391,6 +409,7 @@ export function patchOrder(
 
     let typeId = before.pizzaTypeId;
     let typeName = before.pizzaTypeName;
+    let typeEmoji = before.pizzaTypeEmoji;
     if (input.pizzaTypeId !== undefined && input.pizzaTypeId !== before.pizzaTypeId) {
       // Past IN_PREPARATION the pizza physically exists; changing what it is would be a lie.
       if (before.status !== STATUS.ORDERED && before.status !== STATUS.IN_PREPARATION) {
@@ -402,19 +421,23 @@ export function patchOrder(
       }
       const type = requireLiveType(input.pizzaTypeId);
       typeId = type.id;
-      typeName = type.name; // re-snapshotted together with the id, never separately
+      // re-snapshotted together with the id, never separately
+      typeName = type.name;
+      typeEmoji = type.emoji;
     }
 
     const now = Date.now();
     db.prepare(
       'UPDATE orders SET customer_name = :name, note = :note, pizza_type_id = :typeId, ' +
-        'pizza_type_name = :typeName, updated_at = :now WHERE id = :id',
+        'pizza_type_name = :typeName, pizza_type_emoji = :typeEmoji, updated_at = :now ' +
+        'WHERE id = :id',
     ).run({
       id,
       name: input.customerName ?? before.customerName,
       note: input.note ?? before.note,
       typeId,
       typeName,
+      typeEmoji,
       now,
     });
 
@@ -428,7 +451,9 @@ export function patchOrder(
 export function setUnpaid(id: number): Order {
   return mutate(() => {
     const now = Date.now();
-    db.prepare('UPDATE orders SET paid_at = NULL, updated_at = :now WHERE id = :id').run({ id, now });
+    db.prepare(
+      'UPDATE orders SET paid_at = NULL, payment_method = NULL, updated_at = :now WHERE id = :id',
+    ).run({ id, now });
     log(`UNPAID #${id}`);
     return requireOrder(id);
   });
@@ -472,8 +497,9 @@ export function remakeOrder(id: number): { original: Order; clone: Order } {
     const result = db
       .prepare(
         'INSERT INTO orders (public_token, customer_name, note, pizza_type_id, pizza_type_name, ' +
-          'status, paid_at, remade_from, created_at, updated_at) ' +
-          'VALUES (:token, :name, :note, :typeId, :typeName, :status, :paidAt, :from, :now, :now)',
+          'pizza_type_emoji, payment_method, status, paid_at, remade_from, created_at, updated_at) ' +
+          'VALUES (:token, :name, :note, :typeId, :typeName, :emoji, :payment, :status, ' +
+          ':paidAt, :from, :now, :now)',
       )
       .run({
         token: newToken(),
@@ -481,6 +507,9 @@ export function remakeOrder(id: number): { original: Order; clone: Order } {
         note: original.note,
         typeId: original.pizzaTypeId,
         typeName: original.pizzaTypeName,
+        emoji: original.pizzaTypeEmoji,
+        // They already paid for the one that got ruined; never charge them twice.
+        payment: original.paymentMethod,
         status: STATUS.IN_PREPARATION,
         paidAt: original.paidAt,
         from: original.id,
@@ -645,6 +674,7 @@ export function deleteLayer(
 
 export function createPizzaType(input: {
   name: string;
+  emoji: string;
   ingredients: string[];
   bakeSeconds: number;
 }): PizzaType {
@@ -655,11 +685,13 @@ export function createPizzaType(input: {
     };
     const result = db
       .prepare(
-        'INSERT INTO pizza_types (name, ingredients, bake_seconds, position, created_at, updated_at) ' +
-          'VALUES (:name, :ingredients, :bakeSeconds, :position, :now, :now)',
+        'INSERT INTO pizza_types (name, emoji, ingredients, bake_seconds, position, ' +
+          'created_at, updated_at) ' +
+          'VALUES (:name, :emoji, :ingredients, :bakeSeconds, :position, :now, :now)',
       )
       .run({
         name: input.name,
+        emoji: input.emoji || DEFAULT_PIZZA_EMOJI,
         ingredients: JSON.stringify(input.ingredients),
         bakeSeconds: clamp(input.bakeSeconds, 30, 3600),
         position: maxPos.p + 1,
@@ -676,6 +708,7 @@ export function updatePizzaType(
   id: number,
   input: {
     name?: string;
+    emoji?: string;
     ingredients?: string[];
     bakeSeconds?: number;
     soldOut?: boolean;
@@ -695,12 +728,13 @@ export function updatePizzaType(
     // NOTE: orders.pizza_type_name is deliberately NOT touched. A pizza someone already
     // ordered keeps the name they ordered it under.
     db.prepare(
-      'UPDATE pizza_types SET name = :name, ingredients = :ingredients, ' +
+      'UPDATE pizza_types SET name = :name, emoji = :emoji, ingredients = :ingredients, ' +
         'bake_seconds = :bakeSeconds, sold_out = :soldOut, archived_at = :archivedAt, ' +
         'position = :position, updated_at = :now WHERE id = :id',
     ).run({
       id,
       name: input.name ?? before.name,
+      emoji: input.emoji || before.emoji,
       ingredients: JSON.stringify(input.ingredients ?? before.ingredients),
       bakeSeconds: clamp(input.bakeSeconds ?? before.bakeSeconds, 30, 3600),
       soldOut: (input.soldOut ?? before.soldOut) ? 1 : 0,

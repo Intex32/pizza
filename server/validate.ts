@@ -133,6 +133,21 @@ export function optStrArray(
   return strArray(o, key, opts);
 }
 
+/**
+ * An emoji field. Length is measured in CODE POINTS, not UTF-16 units, because a single
+ * emoji like 👨‍🍳 is three code points and five units - a naive .length check would reject
+ * perfectly ordinary input.
+ */
+export function optEmoji(o: Record<string, unknown>, key: string): string | undefined {
+  if (o[key] === undefined || o[key] === null) return undefined;
+  const raw = o[key];
+  if (typeof raw !== 'string') throw bad('invalid_field', `${key} must be a string`);
+  const v = raw.trim();
+  if (v === '') return undefined;
+  if ([...v].length > 16) throw bad('invalid_field', 'Use a single emoji');
+  return v;
+}
+
 /** Clamp is deliberate: the CHECK constraint stays a backstop, never the user-facing validator. */
 export function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));

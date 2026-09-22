@@ -123,6 +123,9 @@ export default function NewOrder() {
                   checked={typeId === t.id}
                   onChange={() => setTypeId(t.id)}
                 />
+                <span className="choice-emoji" aria-hidden="true">
+                  {t.emoji}
+                </span>
                 <span>
                   <span className="choice-name">{t.name}</span>
                   {t.soldOut ? <span className="sold-out-tag"> · sold out</span> : null}

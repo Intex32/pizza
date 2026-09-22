@@ -1,6 +1,7 @@
 // TYPES ONLY. `verbatimModuleSyntax` means a value-style import from this module is a
 // compile error rather than a runtime "module has no export" that reads like a bundler bug.
 import type { Status } from './status.ts';
+import type { PaymentMethod } from './payment.ts';
 
 export type Order = {
   id: number;
@@ -8,6 +9,10 @@ export type Order = {
   note: string;
   pizzaTypeId: number | null;
   pizzaTypeName: string;
+  /** Snapshotted with the name, so a deleted type still renders as itself. */
+  pizzaTypeEmoji: string;
+  /** Recorded at the counter when the order moves to preparation. */
+  paymentMethod: PaymentMethod | null;
   status: Status;
   cancelledAt: number | null;
   cancelReason: string;
@@ -31,6 +36,7 @@ export type CustomerOrder = Order & { publicToken: string };
 export type PizzaType = {
   id: number;
   name: string;
+  emoji: string;
   ingredients: string[];
   bakeSeconds: number;
   soldOut: boolean;
@@ -39,7 +45,10 @@ export type PizzaType = {
 };
 
 /** The subset a customer is shown - no bake times, archived types omitted entirely. */
-export type PublicPizzaType = Pick<PizzaType, 'id' | 'name' | 'ingredients' | 'soldOut'>;
+export type PublicPizzaType = Pick<
+  PizzaType,
+  'id' | 'name' | 'emoji' | 'ingredients' | 'soldOut'
+>;
 
 export type OvenLayer = {
   id: number;

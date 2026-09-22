@@ -12,23 +12,27 @@ const token = (): string => randomBytes(16).toString('base64url');
 // --- Starter menu ----------------------------------------------------------------------
 // Only if the table is empty: this script is safe to run against the real database, and
 // the menu is meant to be edited from /crew/menu afterwards, not here.
+// The emoji is what the crew actually read across a hot kitchen - pick ones that are
+// distinguishable at a glance rather than literally correct.
 const STARTER_MENU = [
-  { name: 'Margherita', ingredients: ['tomato sauce', 'mozzarella', 'basil'], bakeSeconds: 300 },
-  { name: 'Salami', ingredients: ['tomato sauce', 'mozzarella', 'salami'], bakeSeconds: 300 },
-  { name: 'Funghi', ingredients: ['tomato sauce', 'mozzarella', 'mushrooms'], bakeSeconds: 330 },
-  { name: 'Diavola', ingredients: ['tomato sauce', 'mozzarella', 'spicy salami', 'chilli'], bakeSeconds: 300 },
-  { name: 'Quattro Formaggi', ingredients: ['mozzarella', 'gorgonzola', 'parmesan', 'pecorino'], bakeSeconds: 270 },
+  { name: 'Margherita', emoji: '🌿', ingredients: ['tomato sauce', 'mozzarella', 'basil'], bakeSeconds: 300 },
+  { name: 'Salami', emoji: '🍖', ingredients: ['tomato sauce', 'mozzarella', 'salami'], bakeSeconds: 300 },
+  { name: 'Funghi', emoji: '🍄', ingredients: ['tomato sauce', 'mozzarella', 'mushrooms'], bakeSeconds: 330 },
+  { name: 'Diavola', emoji: '🌶️', ingredients: ['tomato sauce', 'mozzarella', 'spicy salami', 'chilli'], bakeSeconds: 300 },
+  { name: 'Quattro Formaggi', emoji: '🧀', ingredients: ['mozzarella', 'gorgonzola', 'parmesan', 'pecorino'], bakeSeconds: 270 },
 ];
 
 if (allPizzaTypes().length === 0) {
   tx(() => {
     const ins = db.prepare(
-      'INSERT INTO pizza_types (name, ingredients, bake_seconds, position, created_at, updated_at) ' +
-        'VALUES (:name, :ingredients, :bakeSeconds, :position, :now, :now)',
+      'INSERT INTO pizza_types (name, emoji, ingredients, bake_seconds, position, ' +
+        'created_at, updated_at) ' +
+        'VALUES (:name, :emoji, :ingredients, :bakeSeconds, :position, :now, :now)',
     );
     STARTER_MENU.forEach((t, i) => {
       ins.run({
         name: t.name,
+        emoji: t.emoji,
         ingredients: JSON.stringify(t.ingredients),
         bakeSeconds: t.bakeSeconds,
         position: i,
@@ -114,10 +118,12 @@ tx(() => {
   const ins = db.prepare(`
     INSERT INTO orders (
       public_token, client_request_id, customer_name, note, pizza_type_id, pizza_type_name,
+      pizza_type_emoji, payment_method,
       status, cancelled_at, cancel_reason, paid_at, created_at, updated_at, queued_at,
       baking_started_at, bake_seconds, ready_at, picked_up_at, oven_layer_id, oven_slot
     ) VALUES (
       :token, :requestId, :name, :note, :typeId, :typeName,
+      :emoji, :payment,
       :status, :cancelledAt, :cancelReason, :paidAt, :createdAt, :updatedAt, :queuedAt,
       :bakingStartedAt, :bakeSeconds, :readyAt, :pickedUpAt, :ovenLayerId, :ovenSlot
     )
@@ -139,6 +145,9 @@ tx(() => {
       note: f.note ?? '',
       typeId: type.id,
       typeName: type.name,
+      emoji: type.emoji,
+      // spread across the three methods so the admin breakdown has something to show
+      payment: f.paid ? (['cash', 'paypal', 'free'] as const)[i % 3] : null,
       status: f.status,
       cancelledAt: f.cancelled ? now : null,
       cancelReason: f.cancelled ?? '',

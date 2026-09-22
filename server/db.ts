@@ -3,6 +3,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { DB_PATH, ROOT } from './config.ts';
 import type { Status } from '../shared/status.ts';
+import { DEFAULT_PIZZA_EMOJI, isPaymentMethod } from '../shared/payment.ts';
 import type {
   CrewState,
   CustomerOrder,
@@ -37,13 +38,14 @@ if (!fk || Number(fk.foreign_keys) !== 1) {
 // endpoint in the middle of service.
 const EXPECTED_COLUMNS: Record<string, string[]> = {
   pizza_types: [
-    'id', 'name', 'ingredients', 'bake_seconds', 'sold_out', 'archived_at', 'position',
-    'created_at', 'updated_at',
+    'id', 'name', 'emoji', 'ingredients', 'bake_seconds', 'sold_out', 'archived_at',
+    'position', 'created_at', 'updated_at',
   ],
   oven_layers: ['id', 'name', 'capacity', 'position', 'created_at', 'updated_at'],
   orders: [
     'id', 'public_token', 'client_request_id', 'customer_name', 'note', 'pizza_type_id',
-    'pizza_type_name', 'status', 'cancelled_at', 'cancel_reason', 'remade_from', 'paid_at',
+    'pizza_type_name', 'pizza_type_emoji', 'payment_method', 'status', 'cancelled_at',
+    'cancel_reason', 'remade_from', 'paid_at',
     'created_at', 'updated_at', 'queued_at', 'baking_started_at', 'bake_seconds', 'ready_at',
     'picked_up_at', 'oven_layer_id', 'oven_slot',
   ],
@@ -165,6 +167,8 @@ export function rowToOrder(row: Row): Order {
     note: s(row.note),
     pizzaTypeId: nOrNull(row.pizza_type_id),
     pizzaTypeName: s(row.pizza_type_name),
+    pizzaTypeEmoji: s(row.pizza_type_emoji) || DEFAULT_PIZZA_EMOJI,
+    paymentMethod: isPaymentMethod(row.payment_method) ? row.payment_method : null,
     status: s(row.status) as Status,
     cancelledAt: nOrNull(row.cancelled_at),
     cancelReason: s(row.cancel_reason),
@@ -191,6 +195,7 @@ export function rowToPizzaType(row: Row): PizzaType {
   return {
     id: n(row.id),
     name: s(row.name),
+    emoji: s(row.emoji) || DEFAULT_PIZZA_EMOJI,
     ingredients: parseIngredients(row.ingredients),
     bakeSeconds: n(row.bake_seconds),
     soldOut: n(row.sold_out) === 1,

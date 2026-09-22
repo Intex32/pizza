@@ -44,12 +44,34 @@ export function rollUpIngredients(
  * "How many people ordered each pizza type" - the pre-event estimation view.
  * Grouped by the SNAPSHOTTED name so a renamed or retired type still reads correctly.
  */
-export function countByType(orders: Order[]): { name: string; count: number }[] {
-  const counts = new Map<string, number>();
-  for (const o of orders) counts.set(o.pizzaTypeName, (counts.get(o.pizzaTypeName) ?? 0) + 1);
+export function countByType(
+  orders: Order[],
+): { name: string; emoji: string; count: number }[] {
+  const counts = new Map<string, { emoji: string; count: number }>();
+  for (const o of orders) {
+    const found = counts.get(o.pizzaTypeName);
+    if (found) found.count += 1;
+    else counts.set(o.pizzaTypeName, { emoji: o.pizzaTypeEmoji, count: 1 });
+  }
   return [...counts]
-    .map(([name, count]) => ({ name, count }))
+    .map(([name, v]) => ({ name, emoji: v.emoji, count: v.count }))
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+}
+
+/** How the evening's money came in. `unpaid` is counted separately and deliberately: it
+ *  means the counter never recorded anything, which is different from "it was free". */
+export function countByPayment(orders: Order[]): {
+  cash: number;
+  paypal: number;
+  free: number;
+  unpaid: number;
+} {
+  const out = { cash: 0, paypal: 0, free: 0, unpaid: 0 };
+  for (const o of orders) {
+    if (o.paymentMethod === null) out.unpaid += 1;
+    else out[o.paymentMethod] += 1;
+  }
+  return out;
 }
 
 export function formatIngredients(ingredients: string[]): string {

@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
 import { crewApi } from '../api.ts';
 import { useLive } from '../live.tsx';
-import { Modal } from '../components.tsx';
+import { Modal, PaymentChip } from '../components.tsx';
 import { whenLabel } from './Ordered.tsx';
 import { STATUS_LABEL, STATUS_ORDER } from '../../../shared/status.ts';
 import type { Status } from '../../../shared/status.ts';
-import { countByType, rollUpIngredients } from '../../../shared/menu.ts';
+import { countByPayment, countByType, rollUpIngredients } from '../../../shared/menu.ts';
+import { PAYMENT_EMOJI, PAYMENT_LABEL, PAYMENT_METHODS } from '../../../shared/payment.ts';
 import type { Order } from '../../../shared/types.ts';
 
 type Filter = 'all' | 'active' | 'cancelled' | Status;
@@ -27,6 +28,7 @@ export default function Admin() {
     [liveOrders, state],
   );
   const unpaid = useMemo(() => liveOrders.filter((o) => o.paidAt === null), [liveOrders]);
+  const payments = useMemo(() => countByPayment(liveOrders), [liveOrders]);
   const maxTypeCount = typeCounts[0]?.count ?? 1;
   const maxIngredient = rollup.ingredients[0]?.count ?? 1;
 
@@ -69,6 +71,7 @@ export default function Admin() {
             {typeCounts.map((t) => (
               <div className="bar" key={t.name}>
                 <span className="bar-name" title={t.name}>
+                  <span aria-hidden="true">{t.emoji} </span>
                   {t.name}
                 </span>
                 <span className="bar-track">
@@ -141,14 +144,43 @@ export default function Admin() {
           </div>
           <div className="row-between wrap" style={{ gap: 10, marginTop: 14 }}>
             <div>
-              <strong>{unpaid.length} unpaid</strong>
-              <div className="small muted">
-                Orders that have not been through the counter yet.
-              </div>
+              <strong>{unpaid.length} not yet through the counter</strong>
+              <div className="small muted">Still waiting to pay.</div>
             </div>
             <button type="button" className="btn btn-sm" onClick={() => setFilter('ORDERED')}>
               Show them
             </button>
+          </div>
+        </div>
+      </div>
+
+      {/* --- How it was paid for ------------------------------------------------- */}
+      <div className="section">
+        <h2>
+          How they paid <span className="muted small">— recorded at the counter</span>
+        </h2>
+        <div className="card">
+          <div className="pay-summary">
+            {PAYMENT_METHODS.map((m) => (
+              <div key={m} className={`pay-stat pay-stat-${m}`}>
+                <span className="pay-stat-emoji" aria-hidden="true">
+                  {PAYMENT_EMOJI[m]}
+                </span>
+                <span className="pay-stat-n">{payments[m]}</span>
+                <span className="pay-stat-label">{PAYMENT_LABEL[m]}</span>
+              </div>
+            ))}
+            <div className="pay-stat pay-stat-unpaid">
+              <span className="pay-stat-emoji" aria-hidden="true">
+                ⏳
+              </span>
+              <span className="pay-stat-n">{payments.unpaid}</span>
+              <span className="pay-stat-label">Not paid yet</span>
+            </div>
+          </div>
+          <div className="hint">
+            “Free” is counted on its own, so a comped crew pizza never looks like one the
+            counter forgot to record.
           </div>
         </div>
       </div>
@@ -193,6 +225,7 @@ export default function Admin() {
                 <th>Pizza</th>
                 <th>Status</th>
                 <th>Paid</th>
+                <th>How</th>
                 <th>Ordered</th>
                 <th className="wrap-cell">Note / reason</th>
                 <th />
@@ -203,7 +236,10 @@ export default function Admin() {
                 <tr key={o.id} style={{ opacity: o.cancelledAt !== null ? 0.6 : 1 }}>
                   <td>{o.id}</td>
                   <td>{o.customerName}</td>
-                  <td>{o.pizzaTypeName}</td>
+                  <td>
+                    <span aria-hidden="true">{o.pizzaTypeEmoji} </span>
+                    {o.pizzaTypeName}
+                  </td>
                   <td>
                     {o.cancelledAt !== null ? (
                       <span style={{ color: 'var(--danger)' }}>Cancelled</span>
@@ -212,6 +248,9 @@ export default function Admin() {
                     )}
                   </td>
                   <td>{o.paidAt !== null ? '✓' : '—'}</td>
+                  <td>
+                    <PaymentChip method={o.paymentMethod} />
+                  </td>
                   <td>{whenLabel(o.createdAt)}</td>
                   <td className="wrap-cell">
                     {o.cancelledAt !== null ? (
@@ -253,7 +292,7 @@ export default function Admin() {
               ))}
               {shown.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="muted" style={{ padding: 20 }}>
+                  <td colSpan={9} className="muted" style={{ padding: 20 }}>
                     Nothing matches.
                   </td>
                 </tr>

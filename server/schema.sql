@@ -6,6 +6,7 @@
 CREATE TABLE IF NOT EXISTS pizza_types (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   name         TEXT    NOT NULL CHECK (length(trim(name)) BETWEEN 1 AND 60),
+  emoji        TEXT    NOT NULL DEFAULT '🍕' CHECK (length(emoji) BETWEEN 1 AND 16),
   ingredients  TEXT    NOT NULL DEFAULT '[]',   -- JSON array of strings
   bake_seconds INTEGER NOT NULL DEFAULT 300 CHECK (bake_seconds BETWEEN 30 AND 3600),
   sold_out     INTEGER NOT NULL DEFAULT 0 CHECK (sold_out IN (0,1)),
@@ -39,6 +40,11 @@ CREATE TABLE IF NOT EXISTS orders (
   pizza_type_name   TEXT    NOT NULL,          -- SNAPSHOT at submit: every screen renders
                                                --   THIS, so renaming or retiring a type never
                                                --   rewrites an order that was already placed
+  pizza_type_emoji  TEXT    NOT NULL DEFAULT '🍕',  -- snapshotted for the same reason
+
+  -- How it was paid for, chosen at the counter when it goes to preparation. NULL until then.
+  payment_method    TEXT    CHECK (payment_method IS NULL
+                                   OR payment_method IN ('cash','paypal','free')),
 
   status            TEXT    NOT NULL DEFAULT 'ORDERED' CHECK (status IN
                       ('ORDERED','IN_PREPARATION','WAITING_FOR_OVEN','BAKING','READY','PICKED_UP')),

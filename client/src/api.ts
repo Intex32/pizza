@@ -6,6 +6,7 @@ import type {
   PizzaType,
   PublicConfig,
 } from '../../shared/types.ts';
+import type { PaymentMethod } from '../../shared/payment.ts';
 
 export class ApiError extends Error {
   status: number;
@@ -152,10 +153,19 @@ export const crewApi = {
     const { status, data } = await request<CrewState>('GET', path);
     return status === 204 ? null : data;
   },
-  walkIn: (body: { customerName: string; pizzaTypeId: number; note: string }) =>
-    api.post<{ order: Order }>('/api/crew/orders', body),
-  transition: (id: number, expected: string, next: string) =>
-    api.post<{ order: Order }>(`/api/crew/orders/${id}/transition`, { expected, next }),
+  walkIn: (body: {
+    customerName: string;
+    pizzaTypeId: number;
+    note: string;
+    paymentMethod: PaymentMethod;
+  }) => api.post<{ order: Order }>('/api/crew/orders', body),
+  /** `paymentMethod` is only meaningful on the ORDERED -> IN_PREPARATION step. */
+  transition: (id: number, expected: string, next: string, paymentMethod?: PaymentMethod) =>
+    api.post<{ order: Order }>(`/api/crew/orders/${id}/transition`, {
+      expected,
+      next,
+      ...(paymentMethod ? { paymentMethod } : {}),
+    }),
   /** A deck is a numbered row of slots and order matters, so placement is a PAIR.
    *  Both null means the Unplaced tray. */
   place: (id: number, ovenLayerId: number | null, ovenSlot: number | null) =>
@@ -180,12 +190,17 @@ export const crewApi = {
       `/api/crew/layers/${id}?moveTo=${moveTo}`,
     ),
 
-  createType: (body: { name: string; ingredients: string[]; bakeSeconds: number }) =>
-    api.post<{ pizzaType: PizzaType }>('/api/crew/pizza-types', body),
+  createType: (body: {
+    name: string;
+    emoji: string;
+    ingredients: string[];
+    bakeSeconds: number;
+  }) => api.post<{ pizzaType: PizzaType }>('/api/crew/pizza-types', body),
   updateType: (
     id: number,
     body: {
       name?: string;
+      emoji?: string;
       ingredients?: string[];
       bakeSeconds?: number;
       soldOut?: boolean;

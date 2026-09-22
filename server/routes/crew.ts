@@ -19,8 +19,29 @@ import {
   updatePizzaType,
   updateSettings,
 } from '../orders.ts';
-import { asObject, bad, int, nullableInt, optBool, optInt, optStr, optStrArray, oneOf, str, strArray } from '../validate.ts';
+import {
+  asObject,
+  bad,
+  int,
+  nullableInt,
+  oneOf,
+  optBool,
+  optEmoji,
+  optInt,
+  optStr,
+  optStrArray,
+  str,
+  strArray,
+} from '../validate.ts';
 import { STATUS_ORDER } from '../../shared/status.ts';
+import { PAYMENT_METHODS } from '../../shared/payment.ts';
+import type { PaymentMethod } from '../../shared/payment.ts';
+
+/** Optional on a transition: only the ORDERED -> IN_PREPARATION step carries one. */
+function optPayment(body: Record<string, unknown>): PaymentMethod | null {
+  if (body.paymentMethod === undefined || body.paymentMethod === null) return null;
+  return oneOf(body, 'paymentMethod', PAYMENT_METHODS);
+}
 
 export const crewRouter: Router = Router();
 
@@ -53,6 +74,9 @@ crewRouter.post('/orders', (req, res) => {
     customerName: str(body, 'customerName', { max: 60 }),
     pizzaTypeId: int(body, 'pizzaTypeId', { min: 1 }),
     note: optStr(body, 'note', { max: 280 }) ?? '',
+    // A walk-in is paid for at the counter in the same breath as being created, so the
+    // method is part of creating it rather than a separate step.
+    paymentMethod: oneOf(body, 'paymentMethod', PAYMENT_METHODS),
   });
   res.status(201).json({ order });
 });
@@ -63,6 +87,7 @@ crewRouter.post('/orders/:id/transition', (req, res) => {
     idParam(req),
     oneOf(body, 'expected', STATUS_ORDER),
     oneOf(body, 'next', STATUS_ORDER),
+    optPayment(body),
   );
   res.json({ order });
 });
@@ -162,6 +187,7 @@ crewRouter.post('/pizza-types', (req, res) => {
   const body = asObject(req.body);
   const pizzaType = createPizzaType({
     name: str(body, 'name', { max: 60 }),
+    emoji: optEmoji(body, 'emoji') ?? '',
     ingredients: strArray(body, 'ingredients'),
     bakeSeconds: optInt(body, 'bakeSeconds', { min: 1, max: 100000 }) ?? 300,
   });
@@ -172,6 +198,7 @@ crewRouter.patch('/pizza-types/:id', (req, res) => {
   const body = asObject(req.body);
   const pizzaType = updatePizzaType(idParam(req), {
     name: optStr(body, 'name', { min: 1, max: 60 }),
+    emoji: optEmoji(body, 'emoji'),
     ingredients: optStrArray(body, 'ingredients'),
     bakeSeconds: optInt(body, 'bakeSeconds', { min: 1, max: 100000 }),
     soldOut: optBool(body, 'soldOut'),
