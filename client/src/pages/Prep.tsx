@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { crewApi, serverNow } from '../api.ts';
 import { useLive } from '../live.tsx';
+import { useFocusCard, useFocusedOrderId } from '../useFocusOrder.ts';
 import { EmptyState, NoteBadge, SoundToggle, useBoardStale } from '../components.tsx';
 import { useWakeLock } from '../useWakeLock.ts';
 import { useNow, elapsed } from '../useNow.ts';
@@ -12,7 +13,8 @@ export default function Prep() {
   useWakeLock();
   const now = useNow(1000);
   const stale = useBoardStale();
-  const { orders, mutateOrder, pending } = useLive();
+  const { orders, mutateOrder } = useLive();
+  const focusId = useFocusedOrderId();
 
   // Oldest first: whoever has been waiting longest gets made next, and a list that only
   // ever grows downwards means the top of the screen is stable to work from.
@@ -80,47 +82,60 @@ export default function Prep() {
         </EmptyState>
       ) : (
         <div className={`olist${stale ? ' board-stale' : ''}`}>
-          {list.map((o) => {
-            const p = pending[o.id];
-            const locked = Boolean(p && !p.failed);
-            return (
-              <div
-                key={o.id}
-                className="orow"
-                style={{
-                  opacity: locked ? 0.6 : 1,
-                  borderColor: p?.failed ? 'var(--warn)' : undefined,
-                }}
-              >
-                <span className="orow-emoji" aria-hidden="true">
-                  {o.pizzaTypeEmoji}
-                </span>
-                <span className="orow-no">#{o.id}</span>
-                <div className="orow-main">
-                  <div className="orow-name">{o.customerName}</div>
-                  <div className="orow-sub">
-                    {o.pizzaTypeName} · waiting {elapsed(o.paidAt ?? o.createdAt, now)}
-                    {p?.failed ? ' · NOT SAVED' : ''}
-                  </div>
-                  <NoteBadge note={o.note} />
-                </div>
-                <div className="orow-actions">
-                  {/* Advancing is a deliberate button press, never a tap on the row: a
-                      sleeve brushing a card should not send a pizza to the oven. */}
-                  <button
-                    type="button"
-                    className="btn btn-ok btn-advance"
-                    disabled={locked}
-                    onClick={() => toOven(o)}
-                  >
-                    MOVE TO OVEN
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+          {list.map((o) => (
+            <PrepRow key={o.id} order={o} now={now} focusId={focusId} onToOven={() => toOven(o)} />
+          ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Extracted from the list only because useFocusCard is a hook and cannot run inside .map(). */
+function PrepRow({
+  order,
+  now,
+  focusId,
+  onToOven,
+}: {
+  order: Order;
+  now: number;
+  focusId: number | null;
+  onToOven: () => void;
+}) {
+  const { pending } = useLive();
+  const p = pending[order.id];
+  const locked = Boolean(p && !p.failed);
+  const { ref, focused } = useFocusCard<HTMLDivElement>(order.id, focusId);
+
+  return (
+    <div
+      ref={ref}
+      className={`orow${focused ? ' focused' : ''}`}
+      style={{
+        opacity: locked ? 0.6 : 1,
+        borderColor: p?.failed ? 'var(--warn)' : undefined,
+      }}
+    >
+      <span className="orow-emoji" aria-hidden="true">
+        {order.pizzaTypeEmoji}
+      </span>
+      <span className="orow-no">#{order.id}</span>
+      <div className="orow-main">
+        <div className="orow-name">{order.customerName}</div>
+        <div className="orow-sub">
+          {order.pizzaTypeName} · waiting {elapsed(order.paidAt ?? order.createdAt, now)}
+          {p?.failed ? ' · NOT SAVED' : ''}
+        </div>
+        <NoteBadge note={order.note} />
+      </div>
+      <div className="orow-actions">
+        {/* Advancing is a deliberate button press, never a tap on the row: a sleeve brushing
+            a card should not send a pizza to the oven. */}
+        <button type="button" className="btn btn-ok btn-advance" disabled={locked} onClick={onToOven}>
+          MOVE TO OVEN
+        </button>
+      </div>
     </div>
   );
 }

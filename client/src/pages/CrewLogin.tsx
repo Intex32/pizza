@@ -3,6 +3,16 @@ import { useNavigate, useSearchParams } from 'react-router';
 import { ApiError, publicApi } from '../api.ts';
 import { unlockAudio } from '../alarm.ts';
 
+/**
+ * Where ?next= is allowed to send someone after logging in.
+ *
+ * Widened to cover /t/<token>, so a crew member who scanned a ticket before logging in lands
+ * back on that ticket rather than on a generic screen. Tightened at the same time: the old
+ * `next.startsWith('/crew')` also accepted '/crewevil', and an open redirect is an open
+ * redirect even on a kitchen LAN. The token shape is base64url, 22 chars for 16 bytes.
+ */
+const SAFE_NEXT = /^\/crew(\/|$)|^\/t\/[A-Za-z0-9_-]{1,64}$/;
+
 export default function CrewLogin() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -23,7 +33,7 @@ export default function CrewLogin() {
     setError('');
     try {
       await publicApi.login(password);
-      navigate(next.startsWith('/crew') ? next : '/crew', { replace: true });
+      navigate(SAFE_NEXT.test(next) ? next : '/crew', { replace: true });
     } catch (err) {
       setBusy(false);
       setPassword('');

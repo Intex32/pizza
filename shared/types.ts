@@ -31,7 +31,16 @@ export type Order = {
 };
 
 /** What a customer gets back: their own order, including the token that addresses it. */
-export type CustomerOrder = Order & { publicToken: string };
+export type CustomerOrder = Order & {
+  publicToken: string;
+  /**
+   * Derived from publicToken, never stored - see server/pickupCode.ts. A lookup key the
+   * crew can read off a phone and type, NOT a credential: it is only ever accepted behind
+   * requireCrew. It lives on CustomerOrder and not Order precisely so that CrewState (which
+   * every tablet polls every second) does not carry a hundred of them.
+   */
+  pickupCode: string;
+};
 
 export type PizzaType = {
   id: number;

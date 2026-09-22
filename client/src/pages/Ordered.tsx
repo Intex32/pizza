@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { crewApi, serverNow } from '../api.ts';
 import { useLive } from '../live.tsx';
+import { useFocusCard, useFocusedOrderId } from '../useFocusOrder.ts';
 import { EmptyState, Modal, NoteBadge } from '../components.tsx';
 import { STATUS } from '../../../shared/status.ts';
 import {
@@ -27,6 +28,7 @@ export function whenLabel(ts: number): string {
 export default function Ordered() {
   const { orders, state, mutateOrder, run, pushToast } = useLive();
   const [query, setQuery] = useState('');
+  const focusId = useFocusedOrderId();
   const [walkIn, setWalkIn] = useState(false);
   const [payFor, setPayFor] = useState<Order | null>(null);
   const [noShowFor, setNoShowFor] = useState<Order | null>(null);
@@ -55,6 +57,14 @@ export default function Ordered() {
     // front of me". localeCompare so Müller sorts where a German speaker expects.
     return [...filtered].sort((a, b) => a.customerName.localeCompare(b.customerName));
   }, [waiting, query]);
+
+  // A scan means "show me this one", so a search term still sitting in the box - which would
+  // filter the scanned order straight back out of `shown` - is cleared rather than worked
+  // around. Surgically force-including it would leave the crew looking at a filtered list
+  // with one inexplicable extra row in it.
+  useEffect(() => {
+    if (focusId !== null) setQuery('');
+  }, [focusId]);
 
   /** The counter's whole job in one step: record how they paid, and send it to the kitchen. */
   const takePayment = (o: Order, method: PaymentMethod) => {
@@ -145,6 +155,7 @@ export default function Ordered() {
             <OrderRow
               key={o.id}
               order={o}
+              focusId={focusId}
               onPay={() => setPayFor(o)}
               onCancel={() => setNoShowFor(o)}
             />
@@ -255,20 +266,24 @@ function PaymentModal({
 
 function OrderRow({
   order,
+  focusId,
   onPay,
   onCancel,
 }: {
   order: Order;
+  focusId: number | null;
   onPay: () => void;
   onCancel: () => void;
 }) {
   const { pending } = useLive();
   const p = pending[order.id];
   const locked = Boolean(p && !p.failed);
+  const { ref, focused } = useFocusCard<HTMLDivElement>(order.id, focusId);
 
   return (
     <div
-      className="orow"
+      ref={ref}
+      className={`orow${focused ? ' focused' : ''}`}
       style={{
         opacity: locked ? 0.6 : 1,
         borderColor: p?.failed ? 'var(--warn)' : undefined,

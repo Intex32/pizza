@@ -11,6 +11,7 @@ import {
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 import { crewApi, serverNow } from '../api.ts';
 import { useLive } from '../live.tsx';
+import { useFocusCard, useFocusParam, useFocusedOrderId } from '../useFocusOrder.ts';
 import { EmptyState, Modal, SoundToggle, useBoardStale } from '../components.tsx';
 import { useWakeLock } from '../useWakeLock.ts';
 import { bakeState, elapsed, useNow } from '../useNow.ts';
@@ -50,6 +51,10 @@ function zoneOf(order: Order): Zone {
 }
 
 export default function Oven() {
+  // Called once here purely to schedule the highlight's self-clear. The cards read the param
+  // themselves rather than take a prop, because they sit three components deep behind the
+  // deck and slot layout.
+  useFocusedOrderId();
   useWakeLock();
   const now = useNow(500);
   const stale = useBoardStale();
@@ -896,11 +901,26 @@ function OvenCard({
     id: `order-${order.id}`,
     disabled: !draggable,
   });
+  const focusId = useFocusParam();
+  const { ref: focusRef, focused } = useFocusCard<HTMLDivElement>(order.id, focusId);
+
+  /**
+   * The root already carries dnd-kit's setNodeRef. Overwriting it would silently stop this
+   * card being draggable, so both refs are fed from one callback.
+   */
+  const setRefs = (el: HTMLDivElement | null) => {
+    focusRef.current = el;
+    setNodeRef(el);
+  };
 
   const cls = [
     'pcard',
     draggable ? 'draggable' : '',
     selected ? 'selected' : '',
+    // NOT folded into 'selected'. On this screen .selected also means "armed - tap a slot to
+    // move it", so reusing it would make a scanned pizza arrive armed and the next tap would
+    // silently relocate it. Finding a pizza must never be able to move one.
+    focused ? 'focused' : '',
     p && !p.failed ? 'pending' : '',
     p && p.failed ? 'failed' : '',
     isBaking && t.expired ? 'expired' : '',
@@ -911,7 +931,7 @@ function OvenCard({
 
   return (
     <div
-      ref={setNodeRef}
+      ref={setRefs}
       className={cls}
       style={{ visibility: isDragging ? 'hidden' : undefined }}
       onClick={onTap}

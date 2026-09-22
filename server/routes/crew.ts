@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import type { Request } from 'express';
-import { buildState, getStateVersion } from '../db.ts';
+import { buildState, findOrdersByPickupCode, getOrderByToken, getStateVersion } from '../db.ts';
 import {
   cancelOrder,
   createLayer,
@@ -22,8 +22,10 @@ import {
 import {
   asObject,
   bad,
+  conflict,
   int,
   nullableInt,
+  notFound,
   oneOf,
   optBool,
   optEmoji,
@@ -34,6 +36,7 @@ import {
   strArray,
 } from '../validate.ts';
 import { STATUS_ORDER } from '../../shared/status.ts';
+import { looksLikePickupCode, normalizePickupCode } from '../../shared/pickupCode.ts';
 import { PAYMENT_METHODS } from '../../shared/payment.ts';
 import type { PaymentMethod } from '../../shared/payment.ts';
 
@@ -63,6 +66,58 @@ crewRouter.get('/state', (req, res) => {
     return;
   }
   res.json(buildState());
+});
+
+// --- Finding an order from a ticket ------------------------------------------------------
+
+/**
+ * Resolve a scanned QR (a public token) or a typed pickup code to an order, so a crew screen
+ * can jump to it.
+ *
+ * This is a READ. It never transitions anything and never bumps the state version - finding
+ * a pizza must not be able to move one. The caller navigates; the crew still taps the button.
+ *
+ * POST, not GET, for the same reason /api/orders/lookup is a POST: a capability token must
+ * never land in a URL or a server log. index.ts's redactUrl only covers ^/api/orders/..., and
+ * keeping the token in the BODY means that regex never has to grow to cover this route.
+ */
+crewRouter.post('/resolve', (req, res) => {
+  const body = asObject(req.body);
+  const token = optStr(body, 'token', { max: 64 });
+  const rawCode = optStr(body, 'code', { max: 16 });
+
+  // Exactly one. Accepting both would make the precedence a silent implementation detail.
+  if ((token === undefined) === (rawCode === undefined)) {
+    throw bad('invalid_body', 'Send exactly one of token or code.');
+  }
+
+  if (token !== undefined) {
+    const order = getOrderByToken(token);
+    if (!order) throw notFound('order_not_found', 'That ticket does not match any order.');
+    res.json({ order, serverNow: Date.now() });
+    return;
+  }
+
+  const code = normalizePickupCode(rawCode ?? '');
+  if (!looksLikePickupCode(code)) {
+    throw bad('invalid_code', 'A pickup code is 5 characters. There is no O, I, 0 or 1 in one.');
+  }
+
+  const { orders } = findOrdersByPickupCode(code);
+  if (orders.length === 0) throw notFound('order_not_found', `No order matches ${code}.`);
+
+  // A 5-char code collides about once in 6,800 evenings, and the live-first search in
+  // findOrdersByPickupCode makes that rarer still - but the widened search can legitimately
+  // return two old rows, and picking one at random is exactly the "it found the wrong Anna"
+  // failure this feature exists to prevent. Hand both back and let the crew choose.
+  //
+  // NOTE the key is `orders`, PLURAL, on purpose: ApiError.conflictOrder on the client reads
+  // details.order, and a singular key here would make it think a mutation had conflicted.
+  if (orders.length > 1) {
+    throw conflict('ambiguous_code', `More than one order matches ${code}.`, { orders });
+  }
+
+  res.json({ order: orders[0], serverNow: Date.now() });
 });
 
 // --- Orders -------------------------------------------------------------------------------

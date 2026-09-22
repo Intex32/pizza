@@ -48,6 +48,8 @@ tablet on its own URL — the URL is the memory, so it survives a reload, a slee
 |---|---|---|
 | Guests | `/` | Their orders, live status. No login. |
 | Guests | `/new` | Place an order. |
+| Guests | `/order/<token>` | One order, live, with its QR and pickup code. |
+| Either | `/t/<token>` | Where a scanned QR lands. Shows the guest their order; sends logged-in crew straight to the board. |
 | Counter | `/crew/orders` | Everyone who has ordered and not yet paid. Search by name, tap **MOVE TO PREP** and say how they paid. Also **+ Walk-in** for someone who never pre-ordered. |
 | Prep table | `/crew/prep` | A list of pizzas to build, oldest at the top. Each has a green **MOVE TO OVEN** button. Dings when a new one arrives. |
 | Oven | `/crew/oven` | Everything the oven crew needs on one screen: what is waiting to go in, the decks and their slots, timers, the alarm. |
@@ -58,6 +60,48 @@ tablet on its own URL — the URL is the memory, so it survives a reload, a slee
 The bar across the top of every crew screen shows `ORD · PREP · OVEN · READY` — one chip per
 screen — so you can see how far behind you are without leaving your station. `OVEN` reads
 `baking / total slots`; how many are waiting to go in is on the oven screen itself.
+
+---
+
+## Tickets: the QR and the pickup code
+
+Every order gets a **QR code** and a **five-character pickup code**, both shown on the guest's
+own order page as soon as they order. It replaces "trust me, I'm Anna" at the counter.
+
+**For the guest.** The code is on screen; **Download ticket (PDF)** saves the same thing as a
+one-page file, which still shows the number, the name and the code if they wander off the
+Wi-Fi. There is nothing to install and no account anywhere.
+
+**For the crew.** Two ways in, and the second is the one you will actually use:
+
+1. **Point your phone's own camera app** at the guest's QR. It opens the order directly. The
+   very first time on a given phone it will say you are logged in somewhere else — log in once
+   there and every scan after that goes straight through. The camera app opens links in the
+   phone's *default* browser, so log in on that one.
+2. **🔎 Find** in the top bar, then type the five characters. Faster than scanning, works when
+   their battery is dead, and never leaves the app.
+
+Either way the app jumps to whichever screen that pizza is on and outlines it. **It never
+changes anything** — you still tap the button yourself. If the pizza is somewhere no board
+shows it, it says so instead of jumping:
+
+- *"#42 Anna — already collected. Handed over 8:12 ago."* — the answer to "did we already give
+  this person their pizza?", which no board can tell you.
+- *"#42 Anna — cancelled (no-show)."*
+
+The pickup code has no `O`, `I`, `0` or `1` in it, because those are the ones people mistype
+reading a code off a phone screen. Case and hyphens do not matter. In the rare event two
+orders share a code, it shows you both by name rather than guessing.
+
+**There is no in-app camera scanner, on purpose.** Browsers only give a web page the camera
+over https, and this runs on a plain LAN address — so an in-page scanner would be a button
+that could never work. The phone's own camera app has no such restriction, which is why it is
+the recommended route. The Find sheet says this rather than showing a dead button.
+
+**No Apple or Google Wallet passes.** A `.pkpass` must be signed with a certificate from a paid
+Apple Developer account or iOS refuses to open it at all, and Google Wallet needs a Google
+Cloud account plus working internet on the guest's phone. The QR needs neither, works the same
+on both platforms, and works with no internet at all.
 
 ---
 
@@ -245,6 +289,14 @@ Pizza types and oven layers survive a purge, so you are ready for next time.
 - **Tablets:** set the screen timeout to Never. The app asks to keep the screen awake, but
   browsers only allow that over https, which a plain LAN address is not.
 - **One tab per device.** Nothing breaks with more, it is just wasted polling.
+- **The QR contains the guest's order link, which is the key to their order.** Anyone who
+  photographs it could cancel that order while it is still unpaid — so the page no longer
+  prints the link in the open, only the QR and a pickup code that grants nothing. The code is
+  useless without a crew login. A saved ticket PDF stops working once you purge after the
+  event.
+- **The QR is built from the address the guest actually used.** If the Pi's IP changes, old
+  QRs stop resolving — give the Pi a DHCP reservation. The pickup code keeps working either
+  way: it is derived from the order itself, not from any address.
 - **Backups mid-event** are safe at any time from the admin screen. Do not copy `data/pizza.db`
   by hand — with WAL on, the newest orders live in the `-wal` file beside it and a plain copy
   would silently lose them.

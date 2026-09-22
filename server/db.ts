@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { DB_PATH, ROOT } from './config.ts';
-import type { Status } from '../shared/status.ts';
+import { pickupCodeFor } from './pickupCode.ts';
+import { STATUS, type Status } from '../shared/status.ts';
 import { DEFAULT_PIZZA_EMOJI, isPaymentMethod } from '../shared/payment.ts';
 import type {
   CrewState,
@@ -186,9 +187,10 @@ export function rowToOrder(row: Row): Order {
   };
 }
 
-/** Only ever returned to the holder of the token itself. Crew snapshots omit the token. */
+/** Only ever returned to the holder of the token itself. Crew snapshots omit both fields. */
 export function rowToCustomerOrder(row: Row): CustomerOrder {
-  return { ...rowToOrder(row), publicToken: s(row.public_token) };
+  const publicToken = s(row.public_token);
+  return { ...rowToOrder(row), publicToken, pickupCode: pickupCodeFor(publicToken) };
 }
 
 export function rowToPizzaType(row: Row): PizzaType {
@@ -228,6 +230,40 @@ export function getCustomerOrderByToken(token: string): CustomerOrder | undefine
     | Row
     | undefined;
   return row ? rowToCustomerOrder(row) : undefined;
+}
+
+/**
+ * The crew-side twin of the above. Returns Order, NOT CustomerOrder: a crew screen resolving
+ * a scanned QR has no business receiving the capability back out of the server.
+ */
+export function getOrderByToken(token: string): Order | undefined {
+  const row = db.prepare('SELECT * FROM orders WHERE public_token = :token').get({ token }) as
+    | Row
+    | undefined;
+  return row ? rowToOrder(row) : undefined;
+}
+
+/**
+ * Find orders by their derived pickup code.
+ *
+ * The code is a hash of the token, so this CANNOT be a WHERE clause - it scans. At a few
+ * hundred rows that is microseconds, and it is what keeps this a zero-schema-change feature.
+ * Storing the code would also invite someone to add `WHERE pickup_code = ?` to a public
+ * route later, which is exactly the inversion this design exists to prevent.
+ *
+ * Live orders first, so a 5-char collision across a whole season of parties still resolves
+ * to the one pizza that is actually in play. Only if nothing live matches does it widen, so
+ * that a collected or cancelled order can be EXPLAINED rather than reported as missing.
+ */
+export function findOrdersByPickupCode(code: string): { orders: Order[]; scope: 'live' | 'all' } {
+  const rows = db.prepare('SELECT * FROM orders ORDER BY id DESC').all() as Row[];
+  const matches = rows.filter((r) => pickupCodeFor(s(r.public_token)) === code);
+
+  const live = matches.filter(
+    (r) => nOrNull(r.cancelled_at) === null && s(r.status) !== STATUS.PICKED_UP,
+  );
+  if (live.length > 0) return { orders: live.map(rowToOrder), scope: 'live' };
+  return { orders: matches.map(rowToOrder), scope: 'all' };
 }
 
 export function allLayers(): OvenLayer[] {

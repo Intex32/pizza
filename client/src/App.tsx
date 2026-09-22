@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router';
 import CustomerHome from './pages/CustomerHome.tsx';
 import NewOrder from './pages/NewOrder.tsx';
 import OrderDetail from './pages/OrderDetail.tsx';
+import ScanLanding from './pages/ScanLanding.tsx';
 import CrewLogin from './pages/CrewLogin.tsx';
 import CrewShell from './pages/CrewShell.tsx';
 import ScreenPicker from './pages/ScreenPicker.tsx';
@@ -19,6 +20,11 @@ export default function App() {
       <Route path="/" element={<CustomerHome />} />
       <Route path="/new" element={<NewOrder />} />
       <Route path="/order/:token" element={<OrderDetail />} />
+
+      {/* Where a scanned ticket QR lands. Kept separate from /order/:token, which has settled
+          customer semantics (bookmark, "keep this link"), because this one is allowed to be
+          auth-aware and send a logged-in crew member straight to the board. */}
+      <Route path="/t/:token" element={<ScanLanding />} />
 
       {/* Crew - one shared password. The login page sits OUTSIDE the shell so it is not
           guarded by the thing it exists to get you past. */}

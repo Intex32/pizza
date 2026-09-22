@@ -153,6 +153,13 @@ export const crewApi = {
     const { status, data } = await request<CrewState>('GET', path);
     return status === 204 ? null : data;
   },
+  /**
+   * Scanned QR (token) or typed pickup code -> the order it names. A READ: it never moves a
+   * pizza. POST with the value in the BODY, not the path, so a capability token cannot end
+   * up in a server log.
+   */
+  resolve: (body: { token: string } | { code: string }) =>
+    api.post<{ order: Order }>('/api/crew/resolve', body),
   walkIn: (body: {
     customerName: string;
     pizzaTypeId: number;

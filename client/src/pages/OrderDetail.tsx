@@ -3,6 +3,8 @@ import { Link, useParams, useSearchParams } from 'react-router';
 import { ApiError, publicApi } from '../api.ts';
 import { addMyOrder, hasMyOrder } from '../myOrders.ts';
 import { Modal, NoteBadge, StatusChip } from '../components.tsx';
+import { QrCode } from '../qr.tsx';
+import { buildTicketPdf } from '../ticketPdf.ts';
 import { canCustomerCancel, statusCopy } from '../statusCopy.ts';
 import { Brand } from './NewOrder.tsx';
 import { STATUS, STATUS_ORDER } from '../../../shared/status.ts';
@@ -74,6 +76,44 @@ export default function OrderDetail() {
     }
   };
 
+  /**
+   * What the QR encodes. /t/ rather than /order/ on purpose: it is the scan entry point, and
+   * it is allowed to be auth-aware, so a crew member whose camera opens it lands on the
+   * order instead of on the customer's own page. A guest scanning their own ticket still
+   * sees exactly this screen.
+   *
+   * Built from window.location.origin and never from a configured constant: if it disagreed
+   * with the address the phone actually reached us on, the crew would be sent somewhere they
+   * cannot load and it would look like the scanner was broken.
+   */
+  const ticketUrl = `${window.location.origin}/t/${token}`;
+
+  const downloadTicket = () => {
+    if (!order) return;
+    try {
+      const blob = buildTicketPdf({
+        orderId: order.id,
+        customerName: order.customerName,
+        pizzaTypeName: order.pizzaTypeName,
+        pickupCode: order.pickupCode,
+        url: ticketUrl,
+        placedAt: order.createdAt,
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `pizza-night-order-${order.id}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // Revoking straight away races Safari's own fetch of the blob, which silently yields
+      // an empty file. A minute is long past any real download.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch {
+      setError('Could not build the ticket PDF. The code on screen still works at the counter.');
+    }
+  };
+
   if (gone) {
     return (
       <div className="page">
@@ -112,7 +152,7 @@ export default function OrderDetail() {
       {isNew ? (
         <div className="banner banner-info" style={{ marginBottom: 14 }}>
           <strong>Order placed.</strong> Come to the counter and pay when you arrive — we start
-          making it then.
+          making it then. Show the code below and we will find you.
         </div>
       ) : null}
 
@@ -163,7 +203,36 @@ export default function OrderDetail() {
             ))}
           </div>
         ) : null}
+
+        {/* Hangs off the bottom of the card on a perforation, so the number, the name and
+            the code read as one object rather than two cards that happen to be adjacent.
+            Hidden when cancelled: a ticket for a cancelled order is a lie. */}
+        {!cancelled ? (
+          <div className="ticket-stub">
+            <div className="qr-plate">
+              <QrCode value={ticketUrl} />
+            </div>
+            <div className="small muted">Pickup code</div>
+            <div className="pickup-code">{order.pickupCode}</div>
+            <div className="hint" style={{ marginTop: 6 }}>
+              {order.status === STATUS.PICKED_UP
+                ? 'Collected. Keep this as your receipt.'
+                : 'Show this at the counter. If the scan will not work, read out the code.'}
+            </div>
+          </div>
+        ) : null}
       </div>
+
+      {!cancelled ? (
+        <button
+          type="button"
+          className={`btn btn-block${isNew ? ' btn-primary' : ''}`}
+          style={{ marginTop: 12 }}
+          onClick={downloadTicket}
+        >
+          Download ticket (PDF)
+        </button>
+      ) : null}
 
       {error ? (
         <div className="banner banner-warn" style={{ marginTop: 12 }}>
@@ -207,16 +276,19 @@ export default function OrderDetail() {
         </button>
       ) : null}
 
-      <div className="card muted" style={{ marginTop: 16 }}>
-        <div className="small" style={{ fontWeight: 650, marginBottom: 4 }}>
-          Keep this link
-        </div>
-        <div className="mono">{`${window.location.origin}/order/${token}`}</div>
+      {/* Collapsed, not removed. This link is the capability that addresses the order, and
+          printing it in the open meant anyone glancing at the phone could read it. The QR
+          above carries the same thing, but only to a camera deliberately aimed at it. */}
+      <details className="card muted" style={{ marginTop: 16 }}>
+        <summary className="small" style={{ fontWeight: 650, cursor: 'pointer' }}>
+          Open this order on another device
+        </summary>
+        <div className="mono" style={{ marginTop: 8 }}>{`${window.location.origin}/order/${token}`}</div>
         <div className="hint">
-          Bookmark it to check your order from any device. If you lose it, just tell the crew your
-          name at the counter.
+          This link is the key to your order: anyone who has it can see it, and cancel it while it
+          is still unpaid. If you lose it, just tell the crew your name at the counter.
         </div>
-      </div>
+      </details>
 
       <p style={{ marginTop: 16 }}>
         <Link className="link" to="/">

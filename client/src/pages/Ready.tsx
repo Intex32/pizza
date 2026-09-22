@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { crewApi, serverNow } from '../api.ts';
 import { useLive } from '../live.tsx';
+import { useFocusCard, useFocusedOrderId } from '../useFocusOrder.ts';
 import { EmptyState, useBoardStale } from '../components.tsx';
 import { useWakeLock } from '../useWakeLock.ts';
 import { elapsed, useNow } from '../useNow.ts';
@@ -17,6 +18,7 @@ export default function Ready() {
   const stale = useBoardStale();
   const { orders, mutateOrder } = useLive();
   const [showOld, setShowOld] = useState(false);
+  const focusId = useFocusedOrderId();
 
   const all = useMemo(
     () =>
@@ -28,6 +30,18 @@ export default function Ready() {
 
   const fresh = all.filter((o) => now - (o.readyAt ?? now) < OLD_MS);
   const old = all.filter((o) => now - (o.readyAt ?? now) >= OLD_MS);
+
+  // A scanned order is DISPROPORTIONATELY likely to be in the collapsed >20-minute bucket -
+  // that is exactly the pizza someone comes back to ask about. Without this the scan would
+  // report success and highlight a card that is not on screen.
+  //
+  // This sits ABOVE the empty-board early return, not next to the markup it affects: a hook
+  // after that return runs on some renders and not others, which React rejects outright.
+  // The dependency is a boolean rather than `old`, which is a fresh array every second.
+  const focusIsOld = focusId !== null && old.some((o) => o.id === focusId);
+  useEffect(() => {
+    if (focusIsOld) setShowOld(true);
+  }, [focusIsOld]);
 
   const collect = (o: Order) => {
     void mutateOrder({
@@ -76,6 +90,7 @@ export default function Ready() {
             key={o.id}
             order={o}
             now={now}
+            focusId={focusId}
             onCollect={() => collect(o)}
             onBack={() => backToOven(o)}
           />
@@ -94,6 +109,7 @@ export default function Ready() {
                   key={o.id}
                   order={o}
                   now={now}
+                  focusId={focusId}
                   onCollect={() => collect(o)}
                   onBack={() => backToOven(o)}
                 />
@@ -109,11 +125,13 @@ export default function Ready() {
 function ReadyCard({
   order,
   now,
+  focusId,
   onCollect,
   onBack,
 }: {
   order: Order;
   now: number;
+  focusId: number | null;
   onCollect: () => void;
   onBack: () => void;
 }) {
@@ -122,12 +140,13 @@ function ReadyCard({
   const age = now - (order.readyAt ?? now);
   // A cold uncollected pizza is a signal to call the name out loud, not a design accident.
   const tone = age >= VERY_COLD_MS ? ' very-cold' : age >= COLD_MS ? ' cold' : '';
+  const { ref, focused } = useFocusCard<HTMLDivElement>(order.id, focusId);
 
   return (
-    <div style={{ position: 'relative', opacity: p && !p.failed ? 0.6 : 1 }}>
+    <div ref={ref} style={{ position: 'relative', opacity: p && !p.failed ? 0.6 : 1 }}>
       <button
         type="button"
-        className={`ready-card${tone}`}
+        className={`ready-card${tone}${focused ? ' focused' : ''}`}
         onClick={onCollect}
         disabled={Boolean(p && !p.failed)}
       >

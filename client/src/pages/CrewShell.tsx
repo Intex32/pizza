@@ -3,6 +3,7 @@ import { Link, Navigate, Outlet, useLocation, useNavigate } from 'react-router';
 import { publicApi } from '../api.ts';
 import { LiveProvider } from '../live.tsx';
 import { ConnectionBar, CountsStrip, OfflineBanner, Toasts } from '../components.tsx';
+import { FindOrderModal } from './FindOrder.tsx';
 
 const LAST_SCREEN_KEY = 'pizza.lastCrewScreen';
 
@@ -46,7 +47,15 @@ export default function CrewShell() {
   }, []);
 
   useEffect(() => {
-    if (location.pathname !== '/crew' && location.pathname in TITLES) {
+    // A scan can send a Ready tablet to /crew/oven for a few seconds, and remembering that
+    // would re-home the station permanently - it would reboot into the oven forever.
+    //
+    // Decided ONCE per pathname, reading the query directly rather than depending on
+    // location.search. That is load-bearing: the highlight REMOVES ?focus= from the URL after
+    // twelve seconds, so an effect watching the query would re-run at that moment, see a
+    // clean URL, and record the screen after all. Measured: it did exactly that.
+    const arrivedViaScan = new URLSearchParams(window.location.search).has('focus');
+    if (location.pathname !== '/crew' && location.pathname in TITLES && !arrivedViaScan) {
       rememberScreen(location.pathname);
     }
   }, [location.pathname]);
@@ -75,8 +84,8 @@ export default function CrewShell() {
 function ShellFrame() {
   const location = useLocation();
   const navigate = useNavigate();
-  const title = TITLES[location.pathname] ?? 'Crew';
   const isOven = location.pathname === '/crew/oven';
+  const [finding, setFinding] = useState(false);
 
   const logout = async () => {
     try {
@@ -93,7 +102,19 @@ function ShellFrame() {
         <Link to="/crew" className="btn btn-sm" title="All screens" style={{ flex: 'none' }}>
           🍕
         </Link>
-        <span className="screen-title">{title}</span>
+        {/* Second in the bar on purpose. .crew-bar is overflow-x: auto with a hidden
+            scrollbar, so on a 375px phone anything past the right edge is effectively
+            invisible - which is already true of Menu, Admin and Log out. This has to stay
+            reachable at scroll origin, because phones are exactly what it is built for. */}
+        <button
+          type="button"
+          className="btn btn-sm"
+          style={{ flex: 'none' }}
+          title="Find an order by QR or pickup code"
+          onClick={() => setFinding(true)}
+        >
+          🔎 Find
+        </button>
         <CountsStrip />
         <span className="spacer" style={{ minWidth: 8 }} />
         <Link to="/crew/menu" className="btn btn-sm btn-ghost" style={{ flex: 'none' }}>
@@ -121,6 +142,8 @@ function ShellFrame() {
       </div>
 
       <Toasts />
+
+      {finding ? <FindOrderModal onClose={() => setFinding(false)} /> : null}
     </div>
   );
 }
