@@ -5,7 +5,7 @@ import {
   orderCount,
   readSettings,
 } from '../db.ts';
-import { cancelByToken, createCustomerOrder } from '../orders.ts';
+import { cancelByToken, createCustomerOrder, paymentLinksFor } from '../orders.ts';
 import { asObject, bad, int, notFound, optStr, str } from '../validate.ts';
 import {
   clearSessionCookie,
@@ -88,7 +88,9 @@ publicRouter.post('/orders/lookup', (req, res) => {
 publicRouter.get('/orders/:token', (req, res) => {
   const order = getCustomerOrderByToken(req.params.token);
   if (!order) throw notFound('order_not_found', 'We could not find that order.');
-  res.json({ order, serverNow: Date.now() });
+  // null until the crew have actually asked this guest to pay online. Gated here rather
+  // than in the page, so the links are not sent to everyone and merely left undrawn.
+  res.json({ order, paymentLinks: paymentLinksFor(order.id), serverNow: Date.now() });
 });
 
 /**

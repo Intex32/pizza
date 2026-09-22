@@ -66,7 +66,18 @@ export type OvenLayer = {
   position: number;
 };
 
-export type Settings = { ordersOpen: boolean };
+export type Settings = {
+  ordersOpen: boolean;
+  /**
+   * Where a guest paying by PayPal or Wero should send the money. Both optional: empty
+   * means "we do not take that", and the button for it is simply never shown.
+   */
+  paypalLink: string;
+  weroLink: string;
+};
+
+/** Where to send an online payment. Empty string means that method is not offered. */
+export type PaymentLinks = { paypal: string; wero: string };
 
 /** The single payload every crew screen renders from. */
 export type CrewState = {

@@ -33,6 +33,8 @@ export default function Ordered() {
   const [walkIn, setWalkIn] = useState(false);
   const [finding, setFinding] = useState(false);
   const [payFor, setPayFor] = useState<Order | null>(null);
+  /** The order whose guest has been asked to pay online and is being waited on. */
+  const [awaitingOnline, setAwaitingOnline] = useState<Order | null>(null);
   const [noShowFor, setNoShowFor] = useState<Order | null>(null);
 
   const waiting = useMemo(
@@ -185,7 +187,34 @@ export default function Ordered() {
         <PaymentModal
           order={payFor}
           onClose={() => setPayFor(null)}
-          onChoose={(m) => takePayment(payFor, m)}
+          onChoose={(m) => {
+            // Cash and free are settled the instant they are tapped - the money is already
+            // in the tin. PayPal is not: it is a promise until somebody has seen it land,
+            // so it detours through a confirmation step instead of moving the pizza.
+            if (m === 'paypal') {
+              const order = payFor;
+              setPayFor(null);
+              setAwaitingOnline(order);
+              return;
+            }
+            takePayment(payFor, m);
+          }}
+        />
+      ) : null}
+
+      {awaitingOnline ? (
+        <OnlinePaymentModal
+          order={awaitingOnline}
+          links={{
+            paypal: state?.settings.paypalLink ?? '',
+            wero: state?.settings.weroLink ?? '',
+          }}
+          onClose={() => setAwaitingOnline(null)}
+          onConfirm={() => {
+            const order = awaitingOnline;
+            setAwaitingOnline(null);
+            takePayment(order, 'paypal');
+          }}
         />
       ) : null}
 
@@ -280,6 +309,111 @@ function PaymentModal({
         ))}
       </div>
       <div className="hint">This goes on the order and shows up on the admin screen.</div>
+    </Modal>
+  );
+}
+
+/**
+ * The second half of taking an online payment.
+ *
+ * Tapping PayPal does not mean the money has arrived, it means the guest has been ASKED.
+ * So this sits between the two: opening it reveals the payment links on the guest's own
+ * order page, and the pizza does not move until a crew member has looked at the PayPal or
+ * Wero app and seen it. Cancelling leaves the order exactly where it was.
+ *
+ * The links stay visible on the guest's page afterwards either way. Somebody who wandered
+ * off mid-payment needs them when they come back, and the crew cancelling out of this
+ * dialog is not a statement that the guest should stop paying.
+ */
+function OnlinePaymentModal({
+  order,
+  links,
+  onClose,
+  onConfirm,
+}: {
+  order: Order;
+  links: { paypal: string; wero: string };
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const [revealed, setRevealed] = useState<'working' | 'done' | 'failed'>('working');
+
+  useEffect(() => {
+    let cancelled = false;
+    void crewApi
+      .requestPayment(order.id)
+      .then(() => {
+        if (!cancelled) setRevealed('done');
+      })
+      .catch(() => {
+        if (!cancelled) setRevealed('failed');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [order.id]);
+
+  const none = !links.paypal && !links.wero;
+
+  return (
+    <Modal
+      title={`Waiting for #${order.id} to pay`}
+      onClose={onClose}
+      actions={
+        <>
+          <button type="button" className="btn" onClick={onClose}>
+            Cancel
+          </button>
+          {/* The ONLY thing that moves the pizza. Deliberately worded as a statement about
+              what the crew member has seen, not as a generic "OK". */}
+          <button type="button" className="btn btn-ok" onClick={onConfirm}>
+            The money arrived — start it
+          </button>
+        </>
+      }
+    >
+      <p className="muted" style={{ marginTop: -6 }}>
+        <span aria-hidden="true">{order.pizzaTypeEmoji} </span>
+        <strong>{order.customerName}</strong> · {order.pizzaTypeName}
+      </p>
+
+      {revealed === 'working' ? <p className="muted">Showing them where to pay…</p> : null}
+
+      {revealed === 'done' ? (
+        <div className="banner banner-info">
+          {none ? (
+            <>
+              No payment links are set up yet. Add them under <strong>Admin → Tonight</strong>,
+              or take the money another way.
+            </>
+          ) : (
+            <>
+              <strong>{order.customerName} can now see the payment links</strong> on their own
+              order page. Ask them to refresh if they are already looking at it.
+            </>
+          )}
+        </div>
+      ) : null}
+
+      {revealed === 'failed' ? (
+        <div className="banner banner-warn">
+          Could not reach the kitchen, so their page may not be showing the links. Read the
+          link out, or take the money another way.
+        </div>
+      ) : null}
+
+      {!none ? (
+        <div className="stack" style={{ marginTop: 12 }}>
+          <div className="small muted">What they see:</div>
+          {links.paypal ? <div className="mono small">{links.paypal}</div> : null}
+          {links.wero ? <div className="mono small">{links.wero}</div> : null}
+        </div>
+      ) : null}
+
+      <div className="hint">
+        Check your PayPal or Wero app before confirming. Nothing moves until you do — the
+        pizza stays where it is if you cancel.
+      </div>
     </Modal>
   );
 }

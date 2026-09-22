@@ -868,13 +868,75 @@ export function deletePizzaType(id: number): void {
 // Crew: settings
 // ===========================================================================================
 
-export function updateSettings(input: { ordersOpen?: boolean }): void {
+export function updateSettings(input: {
+  ordersOpen?: boolean;
+  paypalLink?: string;
+  weroLink?: string;
+}): void {
   mutate(() => {
     if (input.ordersOpen !== undefined) {
       writeSetting('orders_open', input.ordersOpen ? '1' : '0');
       log(`SETTINGS orders_open=${input.ordersOpen ? 1 : 0}`);
     }
+    // The links themselves are NOT logged. They are not secret, but a payment address in a
+    // log file that gets pasted into a chat is an avoidable way to get money sent elsewhere.
+    if (input.paypalLink !== undefined) {
+      writeSetting('paypal_link', input.paypalLink);
+      log(`SETTINGS paypal_link ${input.paypalLink ? 'set' : 'cleared'}`);
+    }
+    if (input.weroLink !== undefined) {
+      writeSetting('wero_link', input.weroLink);
+      log(`SETTINGS wero_link ${input.weroLink ? 'set' : 'cleared'}`);
+    }
   });
+}
+
+/**
+ * "Pay online, please" - the crew have asked this guest for an online payment, so the links
+ * appear on their order page.
+ *
+ * Deliberately NOT a status change. The pizza stays in ORDERED until a crew member has
+ * actually seen the money arrive and confirms; this only reveals the links. Idempotent, so
+ * the crew reopening the dialog does not reset anything, and the row is never removed -
+ * once a guest has been shown where to pay, taking it away again would be baffling.
+ */
+export function requestPayment(id: number): Order {
+  return mutate(() => {
+    const order = requireOrder(id);
+    if (order.cancelledAt !== null) {
+      throw staleConflict('order_cancelled', 'That order was cancelled.', order);
+    }
+    if (order.status !== STATUS.ORDERED) {
+      throw staleConflict(
+        'already_handled',
+        'That order has already been through the counter.',
+        order,
+      );
+    }
+    db.prepare(
+      'INSERT INTO payment_requests (order_id, requested_at) VALUES (:id, :now) ' +
+        'ON CONFLICT (order_id) DO NOTHING',
+    ).run({ id, now: Date.now() });
+    log(`PAYMENT-REQUEST #${id}`);
+    return order;
+  });
+}
+
+/**
+ * The links to show a guest, or null when they have not been asked to pay online.
+ *
+ * Gated on the server rather than in the page: "only after the crew tap PayPal" is the whole
+ * point of the feature, and a client-side check would send the links to every guest anyway
+ * and merely decline to draw them.
+ */
+export function paymentLinksFor(orderId: number): { paypal: string; wero: string } | null {
+  const asked = db
+    .prepare('SELECT 1 AS n FROM payment_requests WHERE order_id = :id')
+    .get({ id: orderId });
+  if (!asked) return null;
+  const { paypalLink, weroLink } = readSettings();
+  if (!paypalLink && !weroLink) return null;
+  return { paypal: paypalLink, wero: weroLink };
 }
 
 export { allLayers };

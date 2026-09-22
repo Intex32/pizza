@@ -10,6 +10,7 @@ import {
   deletePizzaType,
   patchOrder,
   placeOrder,
+  requestPayment,
   readyOrder,
   requeueOrder,
   remakeOrder,
@@ -26,12 +27,13 @@ import {
   bad,
   conflict,
   int,
-  nullableInt,
   notFound,
+  nullableInt,
   oneOf,
   optBool,
   optEmoji,
   optInt,
+  optPayLink,
   optStr,
   optStrArray,
   str,
@@ -176,6 +178,14 @@ crewRouter.post('/orders/:id/ready', (req, res) => {
   res.json({ order: readyOrder(idParam(req)) });
 });
 
+/**
+ * Reveal the payment links on the guest's own order page. NOT a status change: the pizza
+ * stays put until a crew member confirms the money actually arrived.
+ */
+crewRouter.post('/orders/:id/payment-request', (req, res) => {
+  res.json({ order: requestPayment(idParam(req)) });
+});
+
 crewRouter.patch('/orders/:id/bake', (req, res) => {
   const body = asObject(req.body);
   const order = setBakeSeconds(idParam(req), int(body, 'bakeSeconds', { min: 1, max: 100000 }));
@@ -288,6 +298,10 @@ crewRouter.delete('/pizza-types/:id', (req, res) => {
 
 crewRouter.patch('/settings', (req, res) => {
   const body = asObject(req.body);
-  updateSettings({ ordersOpen: optBool(body, 'ordersOpen') });
+  updateSettings({
+    ordersOpen: optBool(body, 'ordersOpen'),
+    paypalLink: optPayLink(body, 'paypalLink'),
+    weroLink: optPayLink(body, 'weroLink'),
+  });
   res.json({ ok: true });
 });

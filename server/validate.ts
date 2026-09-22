@@ -51,6 +51,29 @@ export function optStr(
   return str(o, key, { ...opts, min: 0 });
 }
 
+/**
+ * An optional payment link. Empty string is a real, meaningful value: it means "we do not
+ * take that", and clearing the field has to be possible.
+ *
+ * http(s) ONLY. A `javascript:` URL here would be stored by the crew and then rendered as a
+ * link on a guest's phone, which is a cross-site scripting hole wearing a payment label.
+ */
+export function optPayLink(o: Record<string, unknown>, key: string): string | undefined {
+  const raw = optStr(o, key, { max: 300 });
+  if (raw === undefined) return undefined;
+  if (raw === '') return '';
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw bad('invalid_field', `${key} must be a full link starting with https://`);
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+    throw bad('invalid_field', `${key} must start with https://`);
+  }
+  return raw;
+}
+
 export function int(
   o: Record<string, unknown>,
   key: string,

@@ -99,3 +99,17 @@ CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 ) STRICT;
+
+-- "The crew have asked this guest to pay online."
+--
+-- A SEPARATE TABLE rather than a column on `orders`, on purpose. The drift check in db.ts
+-- refuses to start when `orders` has gained a column, which would mean deleting a database
+-- with a live evening's orders in it. A new table is skipped by that check and created here,
+-- so this ships to a running Pi with nothing to migrate and nothing to lose.
+--
+-- The row is never deleted once written: the payment links stay visible on the guest's page
+-- from the moment they are offered, including after the crew cancel out of the dialog.
+CREATE TABLE IF NOT EXISTS payment_requests (
+  order_id     INTEGER PRIMARY KEY REFERENCES orders(id) ON DELETE CASCADE,
+  requested_at INTEGER NOT NULL
+) STRICT;

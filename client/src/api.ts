@@ -2,6 +2,7 @@ import type {
   CrewState,
   CustomerOrder,
   Order,
+  PaymentLinks,
   OvenLayer,
   PizzaType,
   PublicConfig,
@@ -137,7 +138,9 @@ export const publicApi = {
   lookup: (tokens: string[]) =>
     api.post<{ orders: CustomerOrder[]; missing: string[] }>('/api/orders/lookup', { tokens }),
   byToken: (token: string) =>
-    api.get<{ order: CustomerOrder }>(`/api/orders/${encodeURIComponent(token)}`),
+    api.get<{ order: CustomerOrder; paymentLinks: PaymentLinks | null }>(
+      `/api/orders/${encodeURIComponent(token)}`,
+    ),
   cancel: (token: string) =>
     api.post<{ order: CustomerOrder }>(`/api/orders/${encodeURIComponent(token)}/cancel`),
   login: (password: string) => api.post<void>('/api/auth/login', { password }),
@@ -223,7 +226,12 @@ export const crewApi = {
   ) => api.patch<{ pizzaType: PizzaType }>(`/api/crew/pizza-types/${id}`, body),
   deleteType: (id: number) => api.del<void>(`/api/crew/pizza-types/${id}`),
 
-  settings: (body: { ordersOpen?: boolean }) => api.patch<void>('/api/crew/settings', body),
+  settings: (body: { ordersOpen?: boolean; paypalLink?: string; weroLink?: string }) =>
+    api.patch<void>('/api/crew/settings', body),
+
+  /** Reveals the payment links on the guest's own page. Does NOT move the order. */
+  requestPayment: (id: number) =>
+    api.post<{ order: Order }>(`/api/crew/orders/${id}/payment-request`),
 
   deleteOrder: (id: number) =>
     api.del<void>(`/api/crew/admin/orders/${id}`, { 'x-confirm': 'delete-order' }),

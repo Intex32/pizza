@@ -52,6 +52,7 @@ const EXPECTED_COLUMNS: Record<string, string[]> = {
   ],
   sessions: ['id', 'created_at', 'last_seen_at'],
   settings: ['key', 'value'],
+  payment_requests: ['order_id', 'requested_at'],
 };
 
 /**
@@ -286,11 +287,20 @@ export function getPizzaType(id: number): PizzaType | undefined {
   return row ? rowToPizzaType(row) : undefined;
 }
 
-export function readSettings(): Settings {
-  const row = db.prepare("SELECT value FROM settings WHERE key = 'orders_open'").get() as
+function settingValue(key: string): string | undefined {
+  const row = db.prepare('SELECT value FROM settings WHERE key = :key').get({ key }) as
     | { value?: string }
     | undefined;
-  return { ordersOpen: (row?.value ?? '1') === '1' };
+  return row?.value;
+}
+
+export function readSettings(): Settings {
+  return {
+    ordersOpen: (settingValue('orders_open') ?? '1') === '1',
+    // Absent means not configured, which is a real state: no button is shown for it.
+    paypalLink: settingValue('paypal_link') ?? '',
+    weroLink: settingValue('wero_link') ?? '',
+  };
 }
 
 export function writeSetting(key: string, value: string): void {

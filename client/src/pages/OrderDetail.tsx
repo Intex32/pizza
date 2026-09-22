@@ -8,7 +8,7 @@ import { buildTicketPdf } from '../ticketPdf.ts';
 import { canCustomerCancel, statusCopy } from '../statusCopy.ts';
 import { Brand } from './NewOrder.tsx';
 import { STATUS, STATUS_ORDER } from '../../../shared/status.ts';
-import type { CustomerOrder } from '../../../shared/types.ts';
+import type { CustomerOrder, PaymentLinks } from '../../../shared/types.ts';
 
 const POLL_MS = 8000;
 
@@ -18,6 +18,8 @@ export default function OrderDetail() {
   const isNew = params.get('new') === '1';
 
   const [order, setOrder] = useState<CustomerOrder | null>(null);
+  /** Null until the crew ask this guest to pay online; then it stays for good. */
+  const [payLinks, setPayLinks] = useState<PaymentLinks | null>(null);
   const [gone, setGone] = useState(false);
   const [saved, setSaved] = useState(() => hasMyOrder(token));
   const [confirming, setConfirming] = useState(false);
@@ -28,6 +30,9 @@ export default function OrderDetail() {
     try {
       const res = await publicApi.byToken(token);
       setOrder(res.order);
+      // Never cleared once seen. The server keeps sending them, but a blip that returned
+      // null would otherwise make the links a guest is mid-payment on vanish.
+      if (res.paymentLinks) setPayLinks(res.paymentLinks);
       setGone(false);
     } catch (e) {
       if (e instanceof ApiError && e.status === 404) setGone(true);
@@ -222,6 +227,47 @@ export default function OrderDetail() {
           </div>
         ) : null}
       </div>
+
+      {/* Appears the moment the crew ask for an online payment, and stays. Above the ticket
+          button on purpose: while this is on screen it is the only thing the guest has been
+          asked to do. */}
+      {payLinks && !cancelled ? (
+        <div className="card" style={{ marginTop: 12 }}>
+          <strong>Pay for your pizza</strong>
+          <div className="small muted">
+            {order.status === STATUS.ORDERED
+              ? 'The crew are waiting for this before they start making it.'
+              : 'Already paid? Then you are all set — this is just here for your records.'}
+          </div>
+          <div className="stack" style={{ marginTop: 10 }}>
+            {payLinks.paypal ? (
+              <a
+                className="btn btn-primary btn-block"
+                href={payLinks.paypal}
+                target="_blank"
+                // noreferrer is the load-bearing half: without it the payment page gets a
+                // handle on this tab and can navigate it somewhere else.
+                rel="noopener noreferrer"
+              >
+                Pay with PayPal
+              </a>
+            ) : null}
+            {payLinks.wero ? (
+              <a
+                className="btn btn-block"
+                href={payLinks.wero}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Pay with Wero
+              </a>
+            ) : null}
+          </div>
+          <div className="hint">
+            Opens your payment app. Come back here afterwards and show the crew.
+          </div>
+        </div>
+      ) : null}
 
       {!cancelled ? (
         <button

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { crewApi } from '../api.ts';
 import { useLive } from '../live.tsx';
 import { Modal, PaymentChip } from '../components.tsx';
@@ -142,6 +142,8 @@ export default function Admin() {
               {state?.settings.ordersOpen ? 'Close orders' : 'Open orders'}
             </button>
           </div>
+          <PaymentLinksCard />
+
           <div className="row-between wrap" style={{ gap: 10, marginTop: 14 }}>
             <div>
               <strong>{unpaid.length} not yet through the counter</strong>
@@ -448,5 +450,106 @@ function PurgeModal({ count, onClose }: { count: number; onClose: () => void }) 
         onChange={(e) => setTyped(e.target.value)}
       />
     </Modal>
+  );
+}
+
+/**
+ * Where online payments go. Both optional - an empty field means that method is simply not
+ * offered, and the button for it never appears on a guest's page.
+ *
+ * Kept as a draft in local state rather than saving on every keystroke: these are pasted in,
+ * and a half-typed URL written straight through would be shown to a guest mid-paste.
+ */
+function PaymentLinksCard() {
+  const { state, run } = useLive();
+  const saved = state?.settings;
+  const [paypal, setPaypal] = useState('');
+  const [wero, setWero] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [touched, setTouched] = useState(false);
+
+  // Adopt what the server has, until the crew member starts editing - after which their
+  // typing must not be overwritten by the one-second poll landing underneath them.
+  useEffect(() => {
+    if (touched || !saved) return;
+    setPaypal(saved.paypalLink);
+    setWero(saved.weroLink);
+  }, [saved, touched]);
+
+  const dirty = Boolean(saved) && (paypal !== saved?.paypalLink || wero !== saved?.weroLink);
+
+  const save = async () => {
+    setBusy(true);
+    const ok = await run(() =>
+      crewApi.settings({ paypalLink: paypal.trim(), weroLink: wero.trim() }),
+    );
+    setBusy(false);
+    if (ok) setTouched(false);
+  };
+
+  return (
+    <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+      <strong>Online payment links</strong>
+      <div className="small muted">
+        Shown to a guest only after a crew member taps <strong>PayPal</strong> at the counter.
+        Leave a field empty to not offer it.
+      </div>
+
+      <label className="field" htmlFor="paypal-link" style={{ marginTop: 10 }}>
+        PayPal link
+      </label>
+      <input
+        id="paypal-link"
+        className="input"
+        type="url"
+        inputMode="url"
+        autoComplete="off"
+        spellCheck={false}
+        placeholder="https://paypal.me/yourname"
+        value={paypal}
+        onChange={(e) => {
+          setTouched(true);
+          setPaypal(e.target.value);
+        }}
+      />
+
+      <label className="field" htmlFor="wero-link" style={{ marginTop: 10 }}>
+        Wero link
+      </label>
+      <input
+        id="wero-link"
+        className="input"
+        type="url"
+        inputMode="url"
+        autoComplete="off"
+        spellCheck={false}
+        placeholder="https://wero-wallet.eu/..."
+        value={wero}
+        onChange={(e) => {
+          setTouched(true);
+          setWero(e.target.value);
+        }}
+      />
+
+      <div className="row" style={{ gap: 8, marginTop: 10 }}>
+        <button type="button" className="btn btn-ok" disabled={!dirty || busy} onClick={() => void save()}>
+          {busy ? 'Saving…' : 'Save links'}
+        </button>
+        {dirty ? (
+          <button
+            type="button"
+            className="btn btn-ghost"
+            disabled={busy}
+            onClick={() => {
+              setTouched(false);
+              setPaypal(saved?.paypalLink ?? '');
+              setWero(saved?.weroLink ?? '');
+            }}
+          >
+            Discard
+          </button>
+        ) : null}
+      </div>
+    </div>
   );
 }
